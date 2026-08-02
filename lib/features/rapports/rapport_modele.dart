@@ -185,6 +185,36 @@ class LigneEncaissementMode {
   LigneEncaissementMode(this.mode, {this.montant = 0, this.nombre = 0});
 }
 
+/// Ce qu'un fournisseur a livré sur la période.
+///
+/// Un magasin de matériaux vit de son approvisionnement autant que de ses
+/// ventes : savoir chez qui la marchandise est entrée, en quelle quantité et
+/// pour quel montant engagé, c'est ce qui permet de négocier au coup suivant.
+/// Le rapport n'en disait rien.
+class LigneFournisseurRapport {
+  final String nom;
+
+  /// Nombre d'entrées de stock reçues de lui sur la période.
+  int nbEntrees;
+
+  /// Unités reçues, toutes références confondues.
+  int unites;
+
+  /// Références distinctes livrées.
+  final Set<String> references;
+
+  /// Date de la dernière entrée reçue.
+  String derniereEntree;
+
+  LigneFournisseurRapport(
+    this.nom, {
+    this.nbEntrees = 0,
+    this.unites = 0,
+    Set<String>? references,
+    this.derniereEntree = '',
+  }) : references = references ?? <String>{};
+}
+
 class SectionStock {
   /// Valeur du stock au prix d'achat. `null` si le compte ne voit pas les prix
   /// d'achat.
@@ -231,6 +261,18 @@ class RapportComplet {
   final List<LigneImpaye> impayes;
 
   final List<LigneDepenseRapport> depenses;
+
+  /// Chez qui la marchandise est entrée, sur la période. Vide tant qu'aucune
+  /// entrée n'a été rattachée à un fournisseur — les entrées antérieures aux
+  /// fournisseurs n'en portent aucun, et les attribuer au premier venu
+  /// inventerait un historique d'achat.
+  final List<LigneFournisseurRapport> fournisseurs;
+
+  /// Montant engagé auprès des fournisseurs sur la période : c'est la ligne
+  /// « Achat de marchandise » du bilan, reprise ici pour que la section
+  /// d'approvisionnement se lise seule.
+  final int achatsMarchandiseEngages;
+
   final SectionStock stock;
 
   const RapportComplet({
@@ -251,6 +293,8 @@ class RapportComplet {
     required this.montantFacture,
     required this.impayes,
     required this.depenses,
+    required this.fournisseurs,
+    required this.achatsMarchandiseEngages,
     required this.stock,
   });
 }
@@ -434,6 +478,30 @@ RapportComplet construireRapport({
     nbMouvements: mvtsPeriode.length,
   );
 
+  // Approvisionnement : chez qui la marchandise est entrée sur la période.
+  //
+  // Seules les entrées PORTANT un identifiant de fournisseur sont comptées. Les
+  // entrées antérieures aux fournisseurs n'en portent aucun ; les rattacher au
+  // premier venu inventerait un historique d'achat et fausserait la négociation
+  // du coup suivant.
+  final parFournisseur = <String, LigneFournisseurRapport>{};
+  for (final m in mvtsPeriode) {
+    final id = m.fournisseurId;
+    if (m.type != 'entrée' || id == null || id.isEmpty) continue;
+    final ligne = parFournisseur.putIfAbsent(
+        id, () => LigneFournisseurRapport(m.fournisseurNom ?? id));
+    ligne.nbEntrees++;
+    ligne.unites += m.quantite;
+    ligne.references.add(m.articleId);
+    if (m.date.compareTo(ligne.derniereEntree) > 0) {
+      ligne.derniereEntree = m.date;
+    }
+  }
+  final lignesFournisseurs = parFournisseur.values.toList()
+    ..sort((a, b) => b.unites != a.unites
+        ? b.unites - a.unites
+        : b.nbEntrees - a.nbEntrees);
+
   final serie = _construireSerie(
       ventes: ventes, factures: factures, depenses: depenses, periode: p);
 
@@ -457,6 +525,8 @@ RapportComplet construireRapport({
     montantFacture: facturesPeriode.fold<int>(0, (s, f) => s + f.montantTTC),
     impayes: impayes,
     depenses: lignesDepenses,
+    fournisseurs: lignesFournisseurs,
+    achatsMarchandiseEngages: bilan.achatsMarchandises,
     stock: stock,
   );
 }

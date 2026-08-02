@@ -714,8 +714,9 @@ Future<Uint8List> genererRapportPdf(
     ('03', 'Ventes — articles, clients, détail des opérations'),
     ('04', 'Encaissements et impayés'),
     ('05', 'Dépenses par catégorie et détail'),
-    ('06', 'Stock et mouvements'),
-    ('07', 'Méthode de calcul'),
+    ('06', 'Approvisionnement — chez qui la marchandise entre'),
+    ('07', 'Stock et mouvements'),
+    ('08', 'Méthode de calcul'),
   ];
 
   pw.Widget colonneSommaire(Iterable<(String, String)> items) => pw.Expanded(
@@ -1412,13 +1413,68 @@ Future<Uint8List> genererRapportPdf(
     ],
   ];
 
-  // ── 06 Stock ──────────────────────────────────────────────────────────────
+  // ── 06 Approvisionnement ──────────────────────────────────────────────────
+  // Un magasin de matériaux vit de son approvisionnement autant que de ses
+  // ventes. Le rapport ne disait rien de chez qui la marchandise entrait :
+  // impossible d'arriver chez un fournisseur avec ses propres chiffres au
+  // moment de renégocier.
+  final appro = <pw.Widget>[
+    g.teteSection(
+        '06',
+        'Approvisionnement',
+        r.fournisseurs.isEmpty
+            ? 'Aucune entrée rattachée à un fournisseur sur la période'
+            : '${r.fournisseurs.length} ${_pluriel(r.fournisseurs.length, 'fournisseur')} · '
+                '${numFRPdf(r.achatsMarchandiseEngages)} $devise engagés en marchandise'),
+    if (r.fournisseurs.isEmpty)
+      g.vide('Aucune entrée de stock n\'a été rattachée à un fournisseur sur '
+          'cette période. Les entrées enregistrées avant la tenue du répertoire '
+          'des fournisseurs n\'en portent aucun : elles ne sont attribuées à '
+          'personne plutôt qu\'au premier venu.')
+    else ...[
+      g.tableau(
+        largeurs: {
+          0: const pw.FlexColumnWidth(3.2),
+          1: const pw.FlexColumnWidth(1.3),
+          2: const pw.FlexColumnWidth(1.5),
+          3: const pw.FlexColumnWidth(1.5),
+          4: const pw.FlexColumnWidth(1.8),
+        },
+        entetes: [
+          g.celluleEntete('Fournisseur'),
+          g.celluleEntete('Entrées', droite: true),
+          g.celluleEntete('Unités reçues', droite: true),
+          g.celluleEntete('Références', droite: true),
+          g.celluleEntete('Dernière livraison', droite: true),
+        ],
+        lignes: [
+          for (final f in r.fournisseurs)
+            [
+              g.celluleTexte(f.nom, fort: true),
+              g.celluleTexte(numFRPdf(f.nbEntrees), droite: true),
+              g.celluleTexte(numFRPdf(f.unites), droite: true, fort: true),
+              g.celluleTexte(numFRPdf(f.references.length), droite: true),
+              g.celluleTexte(fmtDateNum(f.derniereEntree), droite: true,
+                  taille: 8, couleur: _n666),
+            ],
+        ],
+      ),
+      g.noteInline(
+          'Les unités reçues comptent la marchandise ENTRÉE en dépôt, pas '
+          'l\'argent versé : une livraison peut être payée d\'avance, à trente '
+          'jours ou jamais. Le montant engagé auprès des fournisseurs figure '
+          'section 05, catégorie « Achat de marchandise » ; ce qui a réellement '
+          'été versé y figure en regard, colonne « Décaissé ».'),
+    ],
+  ];
+
+  // ── 07 Stock ──────────────────────────────────────────────────────────────
   final st = r.stock;
   final alertes = [...st.ruptures, ...st.faibles];
   final alertesAffichees = alertes.take(40).toList();
   final stock = <pw.Widget>[
     g.teteSection(
-        '06',
+        '07',
         'Stock et mouvements',
         '${numFRPdf(st.nbReferences)} ${_pluriel(st.nbReferences, 'référence')} au catalogue · '
             '${numFRPdf(st.nbMouvements)} ${_pluriel(st.nbMouvements, 'mouvement')} sur la période'),
@@ -1489,7 +1545,7 @@ Future<Uint8List> genererRapportPdf(
     ],
   ];
 
-  // ── 07 Méthode ────────────────────────────────────────────────────────────
+  // ── 08 Méthode ────────────────────────────────────────────────────────────
   final blocsMethode = <(String, String)>[
     (
       'Résultat et trésorerie ne s\'additionnent pas',
@@ -1554,7 +1610,7 @@ Future<Uint8List> genererRapportPdf(
 
   final moitie = (blocsMethode.length / 2).ceil();
   final methode = <pw.Widget>[
-    g.teteSection('07', 'Méthode de calcul',
+    g.teteSection('08', 'Méthode de calcul',
         'Ce que les chiffres de ce rapport veulent dire exactement — et ce qu\'ils ne disent pas.'),
     pw.Row(
       crossAxisAlignment: pw.CrossAxisAlignment.start,
@@ -1613,6 +1669,8 @@ Future<Uint8List> genererRapportPdf(
         ...encaissements,
         pw.NewPage(),
         ...depenses,
+        pw.NewPage(),
+        ...appro,
         pw.NewPage(),
         ...stock,
         pw.NewPage(),
