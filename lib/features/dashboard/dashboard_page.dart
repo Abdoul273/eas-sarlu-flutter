@@ -53,6 +53,16 @@ final tousArticlesProvider = StreamProvider<List<Article>>((ref) {
   return stores.watchArticles();
 });
 
+/// Les comptes du magasin, tels que le dernier instantané les a laissés.
+///
+/// Le serveur ne détaille les droits des AUTRES comptes qu'à qui détient le
+/// droit « utilisateurs » : ce qui arrive ici est déjà filtré à la source, et
+/// afficher cette liste n'ouvre donc rien qui soit fermé ailleurs.
+final tousUtilisateursProvider = StreamProvider<List<Utilisateur>>((ref) {
+  final stores = ref.watch(storesProvider);
+  return stores.watchUtilisateurs();
+});
+
 /// Mode confidentialité : masque les montants par défaut
 final masquerMontantsProvider = StateProvider<bool>((ref) => true);
 

@@ -376,4 +376,112 @@ void main() {
       }
     });
   });
+
+  // ─── Trésorerie ─────────────────────────────────────────────────────────────
+  // L'assistant doit pouvoir répondre à « combien j'ai en caisse ? » — et
+  // surtout ne pas confondre l'argent reçu avec l'argent promis.
+
+  group('tresorerie', () {
+    test("compte l'argent reçu moins l'argent sorti", () {
+      final r = sansEspacesFines(
+          executerOutil(const AppelOutil('tresorerie', {}), magasin()));
+
+      // Encaissé 350 000, décaissé 2 000 000 → solde négatif de 1 650 000.
+      expect(r, contains('TRÉSORERIE'));
+      expect(r, contains('350 000'));
+      expect(r, contains('2 M'));
+      // Le solde de tête est donné au franc près : « 2 M » couvrirait aussi
+      // bien 1 650 000 que 2 400 000, et c'est sur ce chiffre qu'on décide.
+      expect(r, contains('-1 650 000'));
+    });
+
+    test("sépare ce qui est en caisse de ce qui est encore dehors", () {
+      final r = sansEspacesFines(
+          executerOutil(const AppelOutil('tresorerie', {}), magasin()));
+
+      // Reste à encaisser : 850 000 − 350 000 = 500 000.
+      expect(r, contains('Reste à encaisser'));
+      expect(r, contains('500 000'));
+      // Reste à payer : la dépense de 5 000 000 non réglée.
+      expect(r, contains('Reste à payer'));
+      expect(r, contains('5 M'));
+    });
+
+    test('met en garde contre la lecture « solde du coffre »', () {
+      // Ni le fonds de caisse d'origine ni les prélèvements du gérant ne sont
+      // enregistrés : le modèle doit le savoir, sans quoi il présentera ce
+      // cumul comme un solde vérifié.
+      final r = executerOutil(const AppelOutil('tresorerie', {}), magasin());
+      expect(r, contains('cumul de mouvements'));
+    });
+
+    test("reste accessible à un vendeur : ce n'est pas une marge", () {
+      final r = executerOutil(
+          const AppelOutil('tresorerie', {}), magasin(voitPrixAchat: false));
+      expect(r, contains('TRÉSORERIE'));
+      expect(documenterOutils(false), contains('tresorerie'));
+    });
+  });
+
+  group('equipe_et_parametres', () {
+    test('rend la fiche du magasin telle qu\'elle est imprimée', () {
+      final d = DonneesMagasin(
+        articles: const [],
+        ventes: const [],
+        clients: const [],
+        factures: const [],
+        depenses: const [],
+        mouvements: const [],
+        entreprise: Entreprise(
+          nom: 'E.A.S Sarlu',
+          ville: 'Conakry',
+          telephone: '+224 000 00 00 00',
+          nif: 'NIF-123',
+        ),
+        voitPrixAchat: true,
+      );
+      final r = executerOutil(const AppelOutil('equipe_et_parametres', {}), d);
+
+      expect(r, contains('E.A.S Sarlu'));
+      expect(r, contains('Conakry'));
+      expect(r, contains('NIF-123'));
+    });
+
+    test('nomme les droits en clair plutôt qu\'en codes internes', () {
+      final d = DonneesMagasin(
+        articles: const [],
+        ventes: const [],
+        clients: const [],
+        factures: const [],
+        depenses: const [],
+        mouvements: const [],
+        utilisateurs: [
+          Utilisateur(
+              id: 'u1', nom: 'Mamadou', email: 'm@x.gn', droits: const ['vendre']),
+        ],
+        voitPrixAchat: true,
+      );
+      final r = executerOutil(const AppelOutil('equipe_et_parametres', {}), d);
+
+      expect(r, contains('Mamadou'));
+      expect(r, contains('Vendre et encaisser'),
+          reason: 'un modèle qui lit « vendre » le répétera tel quel au gérant');
+    });
+
+    test("dit pourquoi la liste est vide plutôt que de laisser un blanc", () {
+      // Le serveur ne détaille les droits des autres comptes qu'à qui gère les
+      // comptes : un silence ici se lit comme une panne.
+      const d = DonneesMagasin(
+        articles: [],
+        ventes: [],
+        clients: [],
+        factures: [],
+        depenses: [],
+        mouvements: [],
+        voitPrixAchat: true,
+      );
+      final r = executerOutil(const AppelOutil('equipe_et_parametres', {}), d);
+      expect(r, contains('gérer les comptes'));
+    });
+  });
 }

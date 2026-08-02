@@ -215,7 +215,7 @@ void main() {
       expect(actionsEcriture(_vendeur).map((a) => a.type).toList(),
           ['createClient', 'createVente', 'enregistrerPaiement']);
       expect(actionsEcriture(_comptable).map((a) => a.type).toList(),
-          ['createDepense']);
+          ['createDepense', 'reglerDepense']);
       expect(actionsEcriture(_sansRien), isEmpty);
       expect(actionsEcriture(null), isEmpty);
       expect(actionsEcriture(_patron).length, _ecritures.length);

@@ -42,7 +42,11 @@ String gnfCompact(num n) {
     return '${NumberFormat('#,##0.0', 'fr_FR').format(n / 1000000000)} Md GNF';
   }
   if (a >= 1000000) {
-    return '${NumberFormat('#,##0', 'fr_FR').format(n / 1000000)} M GNF';
+    // Une décimale, comme pour les milliards. Sans elle, 1 650 000 GNF
+    // s'affichait « 2 M GNF » : 350 000 francs évaporés dans un arrondi, sur un
+    // chiffre que le gérant lit pour décider d'un achat. Le « .# » la fait
+    // disparaître quand elle vaut zéro, si bien que 2 000 000 reste « 2 M ».
+    return '${NumberFormat('#,##0.#', 'fr_FR').format(n / 1000000)} M GNF';
   }
   return '${fmtNombre(n)} GNF';
 }

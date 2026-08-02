@@ -159,6 +159,13 @@ final donneesMagasinProvider = Provider<DonneesMagasin>((ref) {
     depenses: ref.watch(toutesDepensesProvider).valueOrNull ?? const [],
     mouvements: ref.watch(tousMouvementsProvider).valueOrNull ?? const [],
     activites: ref.watch(activitesProvider).valueOrNull ?? const <ActiviteEntree>[],
+    // La fiche du magasin et les comptes : l'assistant doit pouvoir répondre
+    // « qu'est-ce qui est imprimé sur nos factures ? » et « qui a le droit de
+    // saisir une dépense ? » sans qu'on aille ouvrir Paramètres. Le serveur ne
+    // détaille les droits des autres comptes qu'à qui gère les comptes : ce qui
+    // arrive ici est déjà filtré à la source.
+    entreprise: ref.watch(entrepriseProvider).valueOrNull,
+    utilisateurs: ref.watch(tousUtilisateursProvider).valueOrNull ?? const [],
     // Un vendeur ne doit pas pouvoir reconstituer les marges en passant par
     // l'assistant : les outils confidentiels ne lui sont même pas documentés.
     voitPrixAchat: utilisateur?.voitPrixAchat ?? false,

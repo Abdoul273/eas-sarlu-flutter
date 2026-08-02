@@ -79,6 +79,8 @@ class ExecuteurActions {
         return _creerDepense(p);
       case 'enregistrerPaiement':
         return _encaisser(p);
+      case 'reglerDepense':
+        return _reglerDepense(p);
       case 'naviguer':
         final page = _txt(p['page'] ?? p['vue']);
         return ResultatAction('Écran « $page » ouvert', page: page);
@@ -292,6 +294,70 @@ class ExecuteurActions {
     return ResultatAction('${facture.numero} : versement de '
         '${fmtGNF(montant.round())} — reste '
         '${fmtGNF((reste - montant).round())}');
+  }
+
+  // ── Dépenses ────────────────────────────────────────────────────────────────
+
+  /// Enregistre un règlement sur une dépense déjà saisie.
+  ///
+  /// Symétrique exact de `_encaisser`, dans l'autre sens : l'assistant savait
+  /// créer une dépense mais pas la solder, si bien que toute dépense saisie par
+  /// son intermédiaire restait éternellement « non réglée » — et faussait la
+  /// dette fournisseur affichée partout ailleurs.
+  Future<ResultatAction> _reglerDepense(Map<String, dynamic> p) async {
+    final cle = _txt(p['depenseId'] ?? p['numero'] ?? p['depense']);
+    if (cle.isEmpty) throw EchecAction('Aucune dépense désignée.');
+
+    final depenses = await _stores.getDepenses();
+    final trouvees = depenses.where((d) =>
+        d.id == cle ||
+        d.numero.toLowerCase() == cle.toLowerCase() ||
+        d.libelle.toLowerCase() == cle.toLowerCase());
+    if (trouvees.isEmpty) throw EchecAction('Dépense introuvable : « $cle ».');
+    // Une désignation qui vise plusieurs dépenses n'en vise aucune : payer la
+    // mauvaise est plus grave que de redemander laquelle.
+    if (trouvees.length > 1) {
+      throw EchecAction('« $cle » correspond à ${trouvees.length} dépenses. '
+          'Précisez le numéro : '
+          '${trouvees.take(4).map((d) => d.numero).join(', ')}.');
+    }
+    final depense = trouvees.first;
+
+    final montant = _num(p['montant']);
+    if (montant == null || montant <= 0) {
+      throw EchecAction('Montant du règlement invalide.');
+    }
+    final reste = resteAPayer(depense);
+    if (reste == 0) {
+      throw EchecAction('${depense.numero} est déjà entièrement réglée.');
+    }
+    // Comme pour un encaissement : un trop-versé se décide, il ne se produit
+    // pas par accident au détour d'un chiffre mal lu.
+    if (montant > reste) {
+      throw EchecAction('Règlement de ${fmtGNF(montant.round())} supérieur au '
+          'reste à payer sur ${depense.numero} (${fmtGNF(reste)}).');
+    }
+
+    final reglement = Reglement(
+      id: const Uuid().v4(),
+      date: DateTime.now().toIso8601String(),
+      montant: montant.round(),
+      mode: _txt(p['mode']).isEmpty ? 'espèces' : _txt(p['mode']),
+      note: _txt(p['note']),
+      utilisateur: _nomUtilisateur,
+    );
+
+    await _stores.upsert('depense', depense.avecReglement(reglement));
+    await _queue.enqueue('depense_reglement', {
+      'depenseId': depense.id,
+      'reglement': reglement.toJson(),
+      if (depense.rev != null) 'baseRev': depense.rev,
+    });
+
+    final restant = (reste - montant).round();
+    return ResultatAction('${depense.numero} : règlement de '
+        '${fmtGNF(montant.round())} — '
+        '${restant == 0 ? 'dépense soldée' : 'reste ${fmtGNF(restant)}'}');
   }
 
   // ── Recherche d'article, tolérante mais jamais devinée ──────────────────────

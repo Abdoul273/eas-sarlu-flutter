@@ -567,6 +567,39 @@ final List<ActionIA> kActions = [
     },
   ),
   ActionIA(
+    type: 'reglerDepense',
+    droit: 'depenses',
+    titre: 'Régler une dépense',
+    champs: const [
+      ChampAction(
+          nom: 'depenseId',
+          libelle: 'Dépense',
+          type: TypeChamp.texte,
+          requis: true,
+          aide: 'Numéro (DEP-2026-0007) ou libellé exact de la dépense.'),
+      ChampAction(
+          nom: 'montant',
+          libelle: 'Montant versé',
+          type: TypeChamp.nombre,
+          requis: true,
+          suffixe: 'GNF'),
+      ChampAction(
+          nom: 'mode',
+          libelle: 'Mode de règlement',
+          type: TypeChamp.choix,
+          requis: false,
+          choix: ['espèces', 'mobile money', 'virement', 'chèque']),
+      ChampAction(
+          nom: 'note', libelle: 'Note', type: TypeChamp.texte, requis: false),
+    ],
+    resume: (p, ctx) => [
+      'Dépense : ${_txt(p['depenseId'] ?? p['numero'] ?? p['depense'])}',
+      'Versement effectué : ${fmtGNF((_num(p['montant']) ?? 0).round())}',
+      'Mode : ${_txt(p['mode']).isEmpty ? 'espèces' : _txt(p['mode'])}',
+      'Le reste à payer et le statut seront recalculés automatiquement.',
+    ],
+  ),
+  ActionIA(
     type: 'naviguer',
     // Ouvrir un écran n'écrit nulle part, et le routeur refuse déjà les pages
     // qu'un compte n'a pas le droit de voir. Exiger un droit ici empêcherait

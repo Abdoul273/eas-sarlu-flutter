@@ -40,6 +40,16 @@ class DonneesMagasin {
   final List<MouvementStock> mouvements;
   final List<ActiviteEntree> activites;
 
+  /// La fiche du magasin, telle qu'elle est imprimée en tête des factures.
+  /// `null` tant qu'aucun instantané n'a été reçu du serveur.
+  final Entreprise? entreprise;
+
+  /// Les comptes et leurs droits.
+  ///
+  /// Le serveur ne détaille les droits des AUTRES comptes qu'à qui a le droit
+  /// « utilisateurs » ; ce qui arrive ici est donc déjà filtré à la source.
+  final List<Utilisateur> utilisateurs;
+
   /// Faux pour un vendeur : les prix d'achat et les marges lui sont masqués.
   final bool voitPrixAchat;
 
@@ -51,6 +61,8 @@ class DonneesMagasin {
     required this.depenses,
     required this.mouvements,
     this.activites = const [],
+    this.entreprise,
+    this.utilisateurs = const [],
     required this.voitPrixAchat,
   });
 }
@@ -266,6 +278,116 @@ final _bilanFinancier = OutilIA(
     l.add('');
     l.add('Rappel : n\'additionne jamais le résultat et le flux de trésorerie, '
         'ce sont deux lectures du même mois.');
+    return l.join('\n');
+  },
+);
+
+final _tresorerie = OutilIA(
+  nom: 'tresorerie',
+  description:
+      'L\'argent réellement passé par la caisse : ce qui est entré (versements clients), ce qui '
+      'en est sorti (règlements de dépenses), et le solde — le même chiffre que « En caisse » sur '
+      'le tableau de bord. À utiliser pour « combien j\'ai en caisse ? », « est-ce que je peux me '
+      'permettre cet achat ? », « où est passé l\'argent ce mois-ci ? ». À NE PAS confondre avec '
+      'le résultat : on peut être bénéficiaire et sans un franc si les clients n\'ont pas payé.',
+  parametres: {
+    'periode':
+        '« mois », « mois_dernier », « annee », « 30j », « 90j », ou « tout ». Par défaut : tout, '
+            'c\'est-à-dire ce que l\'activité a fait entrer net depuis l\'origine.',
+    'debut': 'Optionnel, date ISO aaaa-mm-jj, avec « fin » pour une période sur mesure.',
+    'fin': 'Optionnel, date ISO aaaa-mm-jj.',
+  },
+  executer: (args, d) {
+    final r = resoudrePeriode(args);
+    final b = _bilan(d, r.periode);
+    final depuisToujours = tresorerieNette(
+        factures: d.factures, depenses: d.depenses);
+
+    // Ce qui reste dehors : de l'argent promis, mais qui n'est pas en caisse.
+    final aEncaisser = d.factures.fold<int>(0, (s, f) => s + resteDu(f));
+    final aPayer = d.depenses.fold<int>(0, (s, x) => s + resteAPayer(x));
+
+    return <String>[
+      'TRÉSORERIE — ${r.libelle}',
+      '',
+      '- Encaissé (versements clients reçus) : ${gnfCompact(b.encaissements)}',
+      '- Décaissé (règlements de dépenses versés) : ${gnfCompact(b.decaissements)}',
+      '- SOLDE DE LA PÉRIODE : ${gnfCompact(b.fluxTresorerie)}',
+      '',
+      // Au franc près, et non en forme abrégée : c'est LE chiffre sur lequel on
+      // décide d'un achat, et « 2 M » couvre aussi bien 1 650 000 que 2 400 000.
+      'En caisse depuis l\'origine : ${fmtGNF(depuisToujours)}',
+      'C\'est un cumul de mouvements, pas le contenu du coffre : ni le fonds de caisse '
+          'du premier jour ni les prélèvements du gérant ne sont enregistrés dans '
+          'l\'application. Ne le présente jamais comme un solde bancaire vérifié.',
+      '',
+      'Ce qui n\'est PAS encore passé par la caisse :',
+      '- Reste à encaisser auprès des clients : ${gnfCompact(aEncaisser)}',
+      '- Reste à payer aux fournisseurs : ${gnfCompact(aPayer)}',
+      '- Position nette hors caisse : ${gnfCompact(aEncaisser - aPayer)}',
+    ].join('\n');
+  },
+);
+
+final _equipeEtParametres = OutilIA(
+  nom: 'equipe_et_parametres',
+  description:
+      'La fiche du magasin (raison sociale, adresse, téléphone, NIF, RCCM, mentions imprimées sur '
+      'les factures) et la liste des comptes avec les droits de chacun. À utiliser pour « quelles '
+      'sont nos coordonnées ? », « qu\'est-ce qui est imprimé sur les factures ? », « qui peut '
+      'saisir des dépenses ? », « qui a le droit de supprimer ? ». Pour MODIFIER quoi que ce soit '
+      'ici, renvoie vers la page Paramètres : ces réglages engagent tout le monde, sur le '
+      'téléphone comme sur l\'application web, et ne se changent pas par une phrase.',
+  executer: (args, d) {
+    final l = <String>['FICHE DE L\'ENTREPRISE', ''];
+    final e = d.entreprise;
+    if (e == null) {
+      l.add('Aucune fiche enregistrée sur cet appareil — synchronisez pour la récupérer.');
+    } else {
+      void ligne(String etiquette, String? valeur) {
+        if (valeur != null && valeur.trim().isNotEmpty) {
+          l.add('- $etiquette : ${valeur.trim()}');
+        }
+      }
+
+      ligne('Raison sociale', e.nom);
+      ligne('Slogan', e.slogan);
+      ligne('Adresse', e.adresse);
+      ligne('Quartier', e.quartier);
+      ligne('Ville', e.ville);
+      ligne('Téléphone', e.telephone);
+      ligne('Courriel', e.email);
+      ligne('Site web', e.siteWeb);
+      ligne('NIF', e.nif);
+      ligne('RCCM', e.rccm);
+      ligne('Banque', e.banque);
+      ligne('RIB', e.rib);
+      ligne('SWIFT', e.swift);
+      ligne('Signataire', e.signataire);
+      ligne('Conditions de paiement', e.conditionsPaiement);
+      ligne('Mentions légales imprimées', e.mentionsLegales);
+      if (l.length == 2) l.add('Fiche enregistrée mais vide.');
+    }
+
+    l.add('');
+    l.add('COMPTES ET DROITS');
+    if (d.utilisateurs.isEmpty) {
+      l.add('Le détail des comptes n\'est visible que par un compte ayant le droit '
+          '« gérer les comptes et leurs droits ».');
+      return l.join('\n');
+    }
+
+    for (final u in d.utilisateurs) {
+      final actif = u.actif ? '' : ' — DÉSACTIVÉ';
+      final proprietaire = u.proprietaire ? ' [propriétaire]' : '';
+      final droits = u.droits.isEmpty
+          ? 'aucun droit particulier'
+          : u.droits.map((c) => kLibelleDroit[c] ?? c).join(', ');
+      l.add('- ${u.nom}$proprietaire$actif : $droits');
+    }
+    l.add('');
+    l.add('Un propriétaire détient tous les droits, y compris ceux qui ne sont pas '
+        'listés à son nom.');
     return l.join('\n');
   },
 );
@@ -1094,6 +1216,7 @@ final _journalActivite = OutilIA(
 final List<OutilIA> kOutils = [
   _resoudreArticle,
   _bilanFinancier,
+  _tresorerie,
   _creancesEtDettes,
   _rentabiliteArticles,
   _reapprovisionnement,
@@ -1105,6 +1228,7 @@ final List<OutilIA> kOutils = [
   _listerArticles,
   _listerClients,
   _journalActivite,
+  _equipeEtParametres,
 ];
 
 /// La notice remise au modèle.
