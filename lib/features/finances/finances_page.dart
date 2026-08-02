@@ -33,6 +33,16 @@ final bilanPeriodeProvider = Provider<Bilan>((ref) {
   );
 });
 
+/// Ce que l'activité a fait entrer net dans la caisse depuis l'origine.
+/// Volontairement HORS période : c'est un cumul, et le tableau de bord affiche
+/// exactement le même chiffre.
+final enCaissseFinancesProvider = Provider<int>((ref) {
+  return tresorerieNette(
+    factures: ref.watch(toutesFacturesProvider).valueOrNull ?? const [],
+    depenses: ref.watch(toutesDepensesProvider).valueOrNull ?? const [],
+  );
+});
+
 // CA par jour pour le graphique
 final caParJourProvider = Provider<List<BarChartGroupData>>((ref) {
   final periode = ref.watch(periodeProvider);
@@ -115,8 +125,6 @@ class _FinancesPageState extends ConsumerState<FinancesPage> {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
-    final metier = context.metier;
-
     final periode = ref.watch(periodeProvider);
     final voitPrixAchat =
         ref.watch(utilisateurActuelProvider)?.voitPrixAchat ?? false;
@@ -132,6 +140,12 @@ class _FinancesPageState extends ConsumerState<FinancesPage> {
     final creances = bilan.creancesClients;
     final dettes = bilan.dettesFournisseurs;
     final positionNette = bilan.positionNette;
+    final decaissements = bilan.decaissements;
+    final achatsMarchandises = bilan.achatsMarchandises;
+    final investissements = bilan.investissements;
+    // Depuis l'origine, et non sur la période : c'est le même chiffre que
+    // « En caisse » sur le tableau de bord, calculé par le même moteur.
+    final enCaisse = ref.watch(enCaissseFinancesProvider);
     final caParJour = ref.watch(caParJourProvider);
 
     return PopScope(
@@ -228,176 +242,209 @@ class _FinancesPageState extends ConsumerState<FinancesPage> {
               ),
               const SizedBox(height: Espace.lg),
 
-              // Titre Section KPI
+              // ══ 1. LE RÉSULTAT ══════════════════════════════════════════
+              // Lu comme un compte de résultat, de haut en bas, chaque ligne
+              // découlant de la précédente. La grille de tuiles qu'il y avait
+              // ici posait le chiffre d'affaires à côté de la trésorerie sans
+              // rien dire de leur rapport — or ces deux chiffres ne répondent
+              // pas à la même question, et les additionner n'a aucun sens.
+              if (voitPrixAchat) ...[
+                const SectionHeader(
+                  titre: 'Résultat de la période',
+                  icone: Icons.assessment_rounded,
+                ),
+                const SizedBox(height: Espace.xs),
+                Text(
+                  'Ce que le commerce gagne, indépendamment de qui a payé quand.',
+                  style: theme.textTheme.bodySmall
+                      ?.copyWith(color: scheme.onSurfaceVariant),
+                ),
+                const SizedBox(height: Espace.sm),
+                AppCard(
+                  margin: EdgeInsets.zero,
+                  child: Column(
+                    children: [
+                      _LigneCompte(
+                        libelle: "Chiffre d'affaires",
+                        detail: '${bilan.nbVentes} vente'
+                            '${bilan.nbVentes > 1 ? 's' : ''}',
+                        montant: caTotal,
+                      ),
+                      _LigneCompte(
+                        libelle: 'Coût des marchandises vendues',
+                        detail: "au prix d'achat actuel — estimation",
+                        montant: -coutAchat,
+                      ),
+                      const Divider(height: Espace.lg),
+                      _LigneCompte(
+                        libelle: 'Marge brute',
+                        detail: bilan.tauxMarge == null
+                            ? 'aucune vente'
+                            : '${bilan.tauxMarge!.toStringAsFixed(1)} % du CA',
+                        montant: marge,
+                        sousTotal: true,
+                      ),
+                      _LigneCompte(
+                        libelle: "Charges d'exploitation",
+                        detail: 'loyer, salaires, transport, carburant…',
+                        montant: -charges,
+                      ),
+                      const Divider(height: Espace.lg),
+                      _LigneCompte(
+                        libelle: "Résultat d'exploitation",
+                        detail: resultatNet >= 0 ? 'bénéfice' : 'perte',
+                        montant: resultatNet,
+                        total: true,
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: Espace.xs),
+                const _NoteExplicative(
+                  'Le coût des marchandises vendues est estimé au prix d\'achat '
+                  'ACTUEL de chaque article : faute de prix historisé ligne à '
+                  'ligne, une marge calculée sur un prix qui a bougé depuis la '
+                  'vente serait fausse sans qu\'on le dise.',
+                ),
+                const SizedBox(height: Espace.xl),
+              ],
+
+              // ══ 2. LA TRÉSORERIE ════════════════════════════════════════
               const SectionHeader(
-                titre: 'Indicateurs Financiers',
-                icone: Icons.account_balance_rounded,
+                titre: 'Trésorerie de la période',
+                icone: Icons.account_balance_wallet_rounded,
+              ),
+              const SizedBox(height: Espace.xs),
+              Text(
+                'Ce qui est réellement passé par la caisse. À ne jamais '
+                'additionner avec le résultat : ce sont deux lectures du même '
+                'mois.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
               ),
               const SizedBox(height: Espace.sm),
+              AppCard(
+                margin: EdgeInsets.zero,
+                child: Column(
+                  children: [
+                    _LigneCompte(
+                      libelle: 'Encaissements clients',
+                      detail: 'versements reçus sur factures',
+                      montant: encaissements,
+                    ),
+                    _LigneCompte(
+                      libelle: 'Décaissements',
+                      detail: 'règlements versés, toutes natures',
+                      montant: -decaissements,
+                    ),
+                    const Divider(height: Espace.lg),
+                    _LigneCompte(
+                      libelle: 'Flux net de la période',
+                      detail: tresorerie >= 0
+                          ? 'la caisse a monté'
+                          : 'la caisse a baissé',
+                      montant: tresorerie,
+                      total: true,
+                    ),
+                  ],
+                ),
+              ),
 
-              // Grille d'indicateurs
-              if (voitPrixAchat) ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: _IndicateurCard(
-                        titre: 'Chiffre d\'Affaires',
-                        valeur: fmtGNF(caTotal),
-                        icone: Icons.trending_up_rounded,
-                        couleurIcone: scheme.primary,
+              // Ce que le gérant cherche quand il demande « où sont passés mes
+              // millions ? ». Ces sorties ne figurent PAS au résultat, et leur
+              // absence de l'écran faisait croire à un oubli de l'application.
+              if (voitPrixAchat &&
+                  (achatsMarchandises > 0 || investissements > 0)) ...[
+                const SizedBox(height: Espace.sm),
+                AppCard(
+                  margin: EdgeInsets.zero,
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Sorties de caisse hors résultat',
+                        style: theme.textTheme.titleSmall
+                            ?.copyWith(fontWeight: FontWeight.bold),
                       ),
-                    ),
-                    const SizedBox(width: Espace.md),
-                    Expanded(
-                      child: _IndicateurCard(
-                        titre: 'Encaissements Réels',
-                        valeur: fmtGNF(encaissements),
-                        icone: Icons.account_balance_wallet_rounded,
-                        couleurIcone: metier.succes,
+                      const SizedBox(height: 2),
+                      Text(
+                        'Engagé sur la période. Ce n\'est pas de l\'argent '
+                        'perdu : c\'est de la marchandise en dépôt et du '
+                        'matériel qui durera.',
+                        style: theme.textTheme.bodySmall
+                            ?.copyWith(color: scheme.onSurfaceVariant),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: Espace.md),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _IndicateurCard(
-                        titre: 'Coût d\'Achat (Ventes)',
-                        valeur: fmtGNF(coutAchat),
-                        icone: Icons.shopping_bag_outlined,
-                        couleurIcone: Colors.amber[700]!,
-                      ),
-                    ),
-                    const SizedBox(width: Espace.md),
-                    Expanded(
-                      child: _IndicateurCard(
-                        titre: 'Marge Brute',
-                        valeur: fmtGNF(marge),
-                        icone: Icons.analytics_rounded,
-                        couleurIcone: Colors.teal,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: Espace.md),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _IndicateurCard(
-                        titre: 'Charges d\'Exploitation',
-                        valeur: fmtGNF(charges),
-                        icone: Icons.receipt_long_rounded,
-                        couleurIcone: scheme.error,
-                      ),
-                    ),
-                    const SizedBox(width: Espace.md),
-                    Expanded(
-                      child: _IndicateurCard(
-                        titre: 'Résultat Exploitation',
-                        valeur: fmtGNF(resultatNet),
-                        icone: Icons.pie_chart_rounded,
-                        couleurIcone: resultatNet >= 0
-                            ? metier.succes
-                            : scheme.error,
-                        destaque: true,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: Espace.md),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _IndicateurCard(
-                        titre: 'Trésorerie Nette',
-                        valeur: fmtGNF(tresorerie),
-                        icone: Icons.savings_rounded,
-                        couleurIcone:
-                            tresorerie >= 0 ? scheme.primary : scheme.error,
-                        destaque: true,
-                      ),
-                    ),
-                    const SizedBox(width: Espace.md),
-                    Expanded(
-                      child: _IndicateurCard(
-                        titre: 'Position Nette',
-                        valeur: fmtGNF(positionNette),
-                        icone: Icons.balance_rounded,
-                        couleurIcone: positionNette >= 0
-                            ? metier.succes
-                            : scheme.error,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: Espace.md),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _IndicateurCard(
-                        titre: 'Créances Clients',
-                        valeur: fmtGNF(creances),
-                        icone: Icons.account_box_rounded,
-                        couleurIcone: Colors.orange[800]!,
-                      ),
-                    ),
-                    const SizedBox(width: Espace.md),
-                    Expanded(
-                      child: _IndicateurCard(
-                        titre: 'Dettes Fournisseurs',
-                        valeur: fmtGNF(dettes),
-                        icone: Icons.request_quote_rounded,
-                        couleurIcone: scheme.error,
-                      ),
-                    ),
-                  ],
-                ),
-              ] else ...[
-                Row(
-                  children: [
-                    Expanded(
-                      child: _IndicateurCard(
-                        titre: 'Chiffre d\'Affaires',
-                        valeur: fmtGNF(caTotal),
-                        icone: Icons.trending_up_rounded,
-                        couleurIcone: scheme.primary,
-                      ),
-                    ),
-                    const SizedBox(width: Espace.md),
-                    Expanded(
-                      child: _IndicateurCard(
-                        titre: 'Encaissements Réels',
-                        valeur: fmtGNF(encaissements),
-                        icone: Icons.account_balance_wallet_rounded,
-                        couleurIcone: metier.succes,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: Espace.md),
-                Row(
-                  children: [
-                    Expanded(
-                      child: _IndicateurCard(
-                        titre: 'Créances Clients',
-                        valeur: fmtGNF(creances),
-                        icone: Icons.account_box_rounded,
-                        couleurIcone: Colors.orange[800]!,
-                      ),
-                    ),
-                    const SizedBox(width: Espace.md),
-                    Expanded(
-                      child: _IndicateurCard(
-                        titre: 'Dettes Fournisseurs',
-                        valeur: fmtGNF(dettes),
-                        icone: Icons.request_quote_rounded,
-                        couleurIcone: scheme.error,
-                      ),
-                    ),
-                  ],
+                      const SizedBox(height: Espace.sm),
+                      if (achatsMarchandises > 0)
+                        _LigneCompte(
+                          libelle: 'Achats de marchandise',
+                          detail: 'entrera au résultat à la revente',
+                          montant: -achatsMarchandises,
+                          couleur: Color(couleurNature['marchandise']!),
+                        ),
+                      if (investissements > 0)
+                        _LigneCompte(
+                          libelle: 'Investissements',
+                          detail: 'biens durables : véhicule, outillage, travaux',
+                          montant: -investissements,
+                          couleur: Color(couleurNature['investissement']!),
+                        ),
+                    ],
+                  ),
                 ),
               ],
+
+              const SizedBox(height: Espace.sm),
+              AppCard(
+                margin: EdgeInsets.zero,
+                child: _LigneCompte(
+                  libelle: "En caisse depuis l'origine",
+                  detail: 'cumul encaissé − décaissé, pas un solde de coffre',
+                  montant: enCaisse,
+                  total: true,
+                ),
+              ),
+              const SizedBox(height: Espace.xl),
+
+              // ══ 3. CE QUI RESTE DEHORS ══════════════════════════════════
+              const SectionHeader(
+                titre: 'Position à la fin de la période',
+                icone: Icons.balance_rounded,
+              ),
+              const SizedBox(height: Espace.xs),
+              Text(
+                'L\'argent promis de part et d\'autre, qui n\'a pas encore '
+                'bougé.',
+                style: theme.textTheme.bodySmall
+                    ?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: Espace.sm),
+              AppCard(
+                margin: EdgeInsets.zero,
+                child: Column(
+                  children: [
+                    _LigneCompte(
+                      libelle: 'Créances clients',
+                      detail: 'ce qu\'ils nous doivent',
+                      montant: creances,
+                    ),
+                    _LigneCompte(
+                      libelle: 'Dettes fournisseurs',
+                      detail: 'ce que nous devons',
+                      montant: -dettes,
+                    ),
+                    const Divider(height: Espace.lg),
+                    _LigneCompte(
+                      libelle: 'Position nette',
+                      detail: positionNette >= 0
+                          ? 'on nous doit plus qu\'on ne doit'
+                          : 'on doit plus qu\'on ne nous doit',
+                      montant: positionNette,
+                      total: true,
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: Espace.xl),
 
               // Graphique CA par jour
@@ -542,75 +589,103 @@ class _FinancesPageState extends ConsumerState<FinancesPage> {
   }
 }
 
-class _IndicateurCard extends StatelessWidget {
-  final String titre;
-  final String valeur;
-  final IconData icone;
-  final Color couleurIcone;
-  final bool destaque;
-
-  const _IndicateurCard({
-    required this.titre,
-    required this.valeur,
-    required this.icone,
-    required this.couleurIcone,
-    this.destaque = false,
+class _LigneCompte extends StatelessWidget {
+  const _LigneCompte({
+    required this.libelle,
+    required this.montant,
+    this.detail,
+    this.sousTotal = false,
+    this.total = false,
+    this.couleur,
   });
+
+  final String libelle;
+
+  /// Négatif pour ce qui se retranche. Le signe porte le sens : un coût affiché
+  /// en positif au milieu d'une soustraction se relit toujours de travers.
+  final int montant;
+  final String? detail;
+  final bool sousTotal;
+  final bool total;
+  final Color? couleur;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
+    final metier = context.metier;
 
-    return Container(
-      padding: const EdgeInsets.all(Espace.md),
-      decoration: BoxDecoration(
-        color: destaque
-            ? couleurIcone.withValues(alpha: 0.08)
-            : scheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.circular(Rayon.md),
-        border: Border.all(
-          color: destaque
-              ? couleurIcone.withValues(alpha: 0.3)
-              : scheme.outlineVariant,
-        ),
-      ),
-      child: Column(
+    final teinte = couleur ??
+        (total
+            ? (montant >= 0 ? metier.succes : metier.danger)
+            : (montant < 0 ? scheme.onSurfaceVariant : scheme.onSurface));
+
+    final style = total
+        ? theme.textTheme.titleMedium?.copyWith(fontWeight: FontWeight.w900)
+        : sousTotal
+            ? theme.textTheme.titleSmall?.copyWith(fontWeight: FontWeight.w700)
+            : theme.textTheme.bodyMedium;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: Espace.xs),
+      child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Container(
-                padding: const EdgeInsets.all(6),
-                decoration: BoxDecoration(
-                  color: couleurIcone.withValues(alpha: 0.12),
-                  borderRadius: BorderRadius.circular(Rayon.sm),
-                ),
-                child: Icon(icone, size: 16, color: couleurIcone),
-              ),
-              const SizedBox(width: Espace.xs),
-              Expanded(
-                child: Text(
-                  titre,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.labelMedium?.copyWith(
-                    color: scheme.onSurfaceVariant,
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(libelle, style: style),
+                if (detail != null)
+                  Text(
+                    detail!,
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
                   ),
-                ),
-              ),
-            ],
+              ],
+            ),
           ),
-          const SizedBox(height: Espace.xs),
+          const SizedBox(width: Espace.sm),
           Text(
-            valeur,
-            style: theme.textTheme.titleMedium?.copyWith(
-              fontWeight: FontWeight.w800,
-              color: destaque ? couleurIcone : scheme.onSurface,
+            // Le signe « moins » typographique, et la valeur absolue : « − 6 M »
+            // se lit d'un coup d'œil là où « -6 000 000 » se déchiffre.
+            '${montant < 0 ? '− ' : ''}${fmtGNF(montant.abs())}',
+            style: style?.copyWith(
+              color: teinte,
+              fontWeight: total
+                  ? FontWeight.w900
+                  : (sousTotal ? FontWeight.w700 : FontWeight.w600),
             ),
           ),
         ],
       ),
+    );
+  }
+}
+
+/// Une précision que le chiffre ne peut pas porter tout seul.
+class _NoteExplicative extends StatelessWidget {
+  const _NoteExplicative(this.texte);
+  final String texte;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Icon(Icons.info_outline_rounded,
+            size: 14, color: scheme.onSurfaceVariant),
+        const SizedBox(width: Espace.xs),
+        Expanded(
+          child: Text(
+            texte,
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant, height: 1.35),
+          ),
+        ),
+      ],
     );
   }
 }
