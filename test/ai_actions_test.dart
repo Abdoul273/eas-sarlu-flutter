@@ -211,7 +211,8 @@ void main() {
   group('actionsPermises', () {
     test('ne rend à chacun que ce que ses droits couvrent', () {
       expect(actionsEcriture(_magasinier).map((a) => a.type).toList(),
-          ['addStock', 'removeStock', 'createArticle', 'updateArticle']);
+          ['addStock', 'removeStock', 'createArticle', 'updateArticle',
+            'createFournisseur']);
       expect(actionsEcriture(_vendeur).map((a) => a.type).toList(),
           ['createClient', 'createVente', 'enregistrerPaiement']);
       expect(actionsEcriture(_comptable).map((a) => a.type).toList(),

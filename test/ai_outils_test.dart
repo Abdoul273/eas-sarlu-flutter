@@ -119,13 +119,55 @@ DonneesMagasin magasin({bool voitPrixAchat = true}) {
         montant: 5000000),
   ];
 
+  final fournisseurs = [
+    Fournisseur(
+        id: 'fo1',
+        nom: 'Import Turquie',
+        telephone: '622000001',
+        quartier: 'Matoto',
+        creeLe: '2026-01-10'),
+    Fournisseur(
+        id: 'fo2',
+        nom: 'Aciérie de Conakry',
+        telephone: '622000002',
+        quartier: 'Kagbelen',
+        creeLe: '2026-02-01'),
+  ];
+  final mouvements = [
+    MouvementStock(
+        id: 'mv1',
+        articleId: 'a1',
+        type: 'entrée',
+        quantite: 100,
+        date: '2026-07-01T09:00:00.000Z',
+        fournisseurId: 'fo1',
+        fournisseurNom: 'Import Turquie'),
+    MouvementStock(
+        id: 'mv2',
+        articleId: 'a2',
+        type: 'entrée',
+        quantite: 40,
+        date: '2026-07-15T09:00:00.000Z',
+        fournisseurId: 'fo1',
+        fournisseurNom: 'Import Turquie'),
+    // Une entrée ancienne, sans fournisseur : elle ne doit être attribuée
+    // à personne plutôt qu'au premier venu.
+    MouvementStock(
+        id: 'mv3',
+        articleId: 'a3',
+        type: 'entrée',
+        quantite: 500,
+        date: '2026-06-01T09:00:00.000Z'),
+  ];
+
   return DonneesMagasin(
     articles: articles,
     ventes: ventes,
     clients: clients,
     factures: factures,
     depenses: depenses,
-    mouvements: const [],
+    mouvements: mouvements,
+    fournisseurs: fournisseurs,
     voitPrixAchat: voitPrixAchat,
   );
 }
@@ -420,6 +462,62 @@ void main() {
           const AppelOutil('tresorerie', {}), magasin(voitPrixAchat: false));
       expect(r, contains('TRÉSORERIE'));
       expect(documenterOutils(false), contains('tresorerie'));
+    });
+  });
+
+  group('fournisseurs', () {
+    test('classe les fournisseurs par ce qu\'on a reçu de chacun', () {
+      final r = sansEspacesFines(
+          executerOutil(const AppelOutil('fournisseurs', {}), magasin()));
+
+      expect(r, contains('FOURNISSEURS — 2 au total'));
+      // 100 + 40 = 140 unités reçues chez Import Turquie, sur 2 entrées.
+      expect(r, contains('140 unités reçues sur 2 entrées'));
+      expect(r, contains('Import Turquie'));
+      expect(r, contains('Aciérie de Conakry'));
+    });
+
+    test('n\'attribue à personne une entrée sans fournisseur', () {
+      // Les 500 unités de l'entrée « mv3 » ne portent aucun identifiant : les
+      // rattacher au premier fournisseur venu inventerait un historique.
+      final r = sansEspacesFines(
+          executerOutil(const AppelOutil('fournisseurs', {}), magasin()));
+      expect(r, isNot(contains('640')));
+      expect(r, contains('aucune entrée enregistrée'),
+          reason: 'le fournisseur sans achat doit être dit tel quel');
+    });
+
+    test('rend la fiche détaillée quand on nomme un fournisseur', () {
+      final r = sansEspacesFines(executerOutil(
+          const AppelOutil('fournisseurs', {'terme': 'turquie'}), magasin()));
+
+      expect(r, contains('FOURNISSEUR — Import Turquie'));
+      expect(r, contains('622000001'));
+      expect(r, contains('Matoto'));
+      // Le détail des entrées, avec l'article concerné.
+      expect(r, contains('Tube carré 40x40'));
+      expect(r, contains('Tôle galvanisée 2mm'));
+    });
+
+    test('oriente au lieu de rendre une liste vide sur un terme inconnu', () {
+      final r = executerOutil(
+          const AppelOutil('fournisseurs', {'terme': 'zzz'}), magasin());
+      expect(r, contains('Aucun fournisseur'));
+      expect(r, contains('sans terme'));
+    });
+
+    test('dit comment en créer un quand il n\'y en a aucun', () {
+      const vide = DonneesMagasin(
+        articles: [], ventes: [], clients: [], factures: [], depenses: [],
+        mouvements: [], voitPrixAchat: true,
+      );
+      final r = executerOutil(const AppelOutil('fournisseurs', {}), vide);
+      expect(r, contains('aucun fournisseur enregistré'));
+      expect(r, contains('page Fournisseurs'));
+    });
+
+    test('reste accessible à un vendeur : ce n\'est pas un prix d\'achat', () {
+      expect(documenterOutils(false), contains('fournisseurs'));
     });
   });
 

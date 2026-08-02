@@ -9,6 +9,7 @@ import '../../core/db/stores.dart';
 import '../../core/models/models.dart';
 import '../../core/auth/auth_state.dart';
 import '../../core/api/endpoints.dart';
+import 'ajustement_sheet.dart';
 import 'mouvement_sheet.dart';
 import '../dashboard/dashboard_page.dart';
 import '../ventes/vente_detail_sheet.dart';
@@ -169,6 +170,22 @@ class ArticleDetailPage extends ConsumerWidget {
                           color: scheme.primary,
                           onPressed: () => context.pushNamed('nouvelle-vente',
                               queryParameters: {'articleId': article.id}),
+                        ),
+                      ),
+                      const SizedBox(width: Espace.xs + 2),
+                      // Le stock ne devrait bouger que par un achat ou une
+                      // vente — mais il faut bien pouvoir le remettre d'aplomb
+                      // quand il ne correspond plus au dépôt. Sans cette porte,
+                      // une quantité tapée à 500 au lieu de 50 restait fausse
+                      // pour toujours, et faussait avec elle la valeur du
+                      // stock, les alertes et le coût des marchandises vendues.
+                      Expanded(
+                        child: _buildActionButton(
+                          context: context,
+                          label: 'Ajuster',
+                          icon: Icons.tune_rounded,
+                          color: metier.alerte,
+                          onPressed: () => _ajusterInventaire(context, article),
                         ),
                       ),
                     ],
@@ -1098,6 +1115,18 @@ class ArticleDetailPage extends ConsumerWidget {
           ),
         ),
       ),
+    );
+  }
+
+  /// Ouvre la correction du stock : comptage, casse, erreur de saisie.
+  void _ajusterInventaire(BuildContext context, Article article) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: false,
+      shape: RoundedRectangleBorder(borderRadius: Rayon.feuille),
+      backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
+      builder: (_) => AjustementSheet(article: article),
     );
   }
 

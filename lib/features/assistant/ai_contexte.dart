@@ -7,6 +7,7 @@ import '../activite/activite_page.dart' show ActiviteEntree, activitesProvider;
 import '../dashboard/dashboard_page.dart';
 import 'ai_actions.dart';
 import '../depenses/depenses_page.dart';
+import '../fournisseurs/fournisseurs_page.dart' show tousFournisseursProvider;
 
 import '../rapports/rapports_page.dart' show tousMouvementsProvider;
 import '../ventes/ventes_page.dart';
@@ -107,7 +108,7 @@ Tout le reste est interdit. Concrètement :
 DATE ACTUELLE : ${DateFormat('EEEE d MMMM yyyy', 'fr_FR').format(maintenant)}
 
 ═══════════ TABLEAU DE BORD (résumé — le détail s'obtient par les outils) ═══════════
-Le magasin compte ${d.articles.length} articles, ${d.clients.length} clients, ${d.ventes.length} ventes, ${d.factures.length} factures et ${d.depenses.length} dépenses enregistrées.
+Le magasin compte ${d.articles.length} articles, ${d.clients.length} clients, ${d.fournisseurs.length} fournisseurs, ${d.ventes.length} ventes, ${d.factures.length} factures et ${d.depenses.length} dépenses enregistrées.
 
 ── 7 derniers jours ──
 CA ${gnfCompact(b7.chiffreAffaires)} (${b7.nbVentes} ventes)${d.voitPrixAchat ? ' | marge brute ${gnfCompact(b7.margeBrute)}' : ''}
@@ -158,6 +159,7 @@ final donneesMagasinProvider = Provider<DonneesMagasin>((ref) {
     factures: ref.watch(toutesFacturesProvider).valueOrNull ?? const [],
     depenses: ref.watch(toutesDepensesProvider).valueOrNull ?? const [],
     mouvements: ref.watch(tousMouvementsProvider).valueOrNull ?? const [],
+    fournisseurs: ref.watch(tousFournisseursProvider).valueOrNull ?? const [],
     activites: ref.watch(activitesProvider).valueOrNull ?? const <ActiviteEntree>[],
     // La fiche du magasin et les comptes : l'assistant doit pouvoir répondre
     // « qu'est-ce qui est imprimé sur nos factures ? » et « qui a le droit de

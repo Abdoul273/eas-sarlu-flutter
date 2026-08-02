@@ -567,6 +567,47 @@ final List<ActionIA> kActions = [
     },
   ),
   ActionIA(
+    type: 'createFournisseur',
+    // Le catalogue et les entrées de stock sont sous « stock » ; un fournisseur
+    // appartient au même circuit d'approvisionnement, et le serveur exige
+    // exactement ce droit-là sur l'opération.
+    droit: 'stock',
+    titre: 'Enregistrer un fournisseur',
+    champs: const [
+      ChampAction(
+          nom: 'nom',
+          libelle: 'Nom / Raison sociale',
+          type: TypeChamp.texte,
+          requis: true),
+      ChampAction(
+          nom: 'telephone',
+          libelle: 'Téléphone',
+          type: TypeChamp.texte,
+          requis: false),
+      ChampAction(
+          nom: 'quartier',
+          libelle: 'Quartier',
+          type: TypeChamp.texte,
+          requis: false),
+      ChampAction(
+          nom: 'ville', libelle: 'Ville', type: TypeChamp.texte, requis: false),
+      ChampAction(
+          nom: 'email', libelle: 'Email', type: TypeChamp.texte, requis: false),
+    ],
+    resume: (p, ctx) {
+      final lignes = <String>['Fournisseur : ${_txt(p['nom'])}'];
+      if (_txt(p['telephone']).isNotEmpty) {
+        lignes.add('Téléphone : ${_txt(p['telephone'])}');
+      }
+      final lieu = [_txt(p['quartier']), _txt(p['ville'])]
+          .where((x) => x.isNotEmpty)
+          .join(', ');
+      if (lieu.isNotEmpty) lignes.add('Lieu : $lieu');
+      lignes.add('Il pourra ensuite être choisi lors d\'un achat de stock.');
+      return lignes;
+    },
+  ),
+  ActionIA(
     type: 'reglerDepense',
     droit: 'depenses',
     titre: 'Régler une dépense',

@@ -75,6 +75,8 @@ class ExecuteurActions {
         return _modifierArticle(p);
       case 'createClient':
         return _creerClient(p);
+      case 'createFournisseur':
+        return _creerFournisseur(p);
       case 'createDepense':
         return _creerDepense(p);
       case 'enregistrerPaiement':
@@ -230,6 +232,38 @@ class ExecuteurActions {
     await _stores.upsert('client', client);
     await _queue.enqueue('client', {'record': client.toJson()});
     return ResultatAction('Client créé : ${client.nom}');
+  }
+
+  /// Enregistre un fournisseur.
+  ///
+  /// Un doublon est refusé plutôt que créé : deux « Import Turquie » dans la
+  /// liste et le gérant ne sait plus lequel choisir au moment d'un achat, ni à
+  /// qui rattacher l'historique.
+  Future<ResultatAction> _creerFournisseur(Map<String, dynamic> p) async {
+    final nom = _txt(p['nom']);
+    if (nom.isEmpty) throw EchecAction('Le nom du fournisseur est obligatoire.');
+
+    final existants = await _stores.getFournisseurs();
+    final deja = existants.where(
+        (f) => f.nom.trim().toLowerCase() == nom.trim().toLowerCase());
+    if (deja.isNotEmpty) {
+      throw EchecAction('« ${deja.first.nom} » est déjà enregistré '
+          'comme fournisseur.');
+    }
+
+    final fournisseur = Fournisseur(
+      id: const Uuid().v4(),
+      nom: nom,
+      telephone: _txt(p['telephone']),
+      email: _txt(p['email']),
+      adresse: _txt(p['adresse']),
+      quartier: _txt(p['quartier']),
+      ville: _txt(p['ville']),
+      creeLe: DateTime.now().toIso8601String(),
+    );
+    await _stores.upsert('fournisseur', fournisseur);
+    await _queue.enqueue('fournisseur', {'record': fournisseur.toJson()});
+    return ResultatAction('Fournisseur créé : ${fournisseur.nom}');
   }
 
   Future<ResultatAction> _creerDepense(Map<String, dynamic> p) async {

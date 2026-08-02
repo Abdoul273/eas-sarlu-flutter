@@ -38,6 +38,11 @@ class DonneesMagasin {
   final List<Facture> factures;
   final List<Depense> depenses;
   final List<MouvementStock> mouvements;
+
+  /// Chez qui le magasin achète. Distinct des clients : un fournisseur n'a ni
+  /// facture, ni créance, et les confondre fausserait les créances clients.
+  final List<Fournisseur> fournisseurs;
+
   final List<ActiviteEntree> activites;
 
   /// La fiche du magasin, telle qu'elle est imprimée en tête des factures.
@@ -60,6 +65,7 @@ class DonneesMagasin {
     required this.factures,
     required this.depenses,
     required this.mouvements,
+    this.fournisseurs = const [],
     this.activites = const [],
     this.entreprise,
     this.utilisateurs = const [],
@@ -1076,6 +1082,140 @@ final _listerArticles = OutilIA(
   },
 );
 
+final _fournisseurs = OutilIA(
+  nom: 'fournisseurs',
+  description:
+      'Chez qui le magasin achète : la liste des fournisseurs avec ce qui a été reçu de chacun '
+      '(nombre d\'entrées de stock, unités reçues, articles fournis, date du dernier achat), '
+      'et leurs coordonnées. À utiliser pour « chez qui j\'achète mon fer ? », '
+      '« qui me fournit les tôles ? », « quel est le numéro de tel fournisseur ? », '
+      '« de qui je n\'ai plus rien reçu depuis longtemps ? ». '
+      'Un fournisseur n\'est PAS un client : il n\'a ni facture, ni créance.',
+  parametres: {
+    'terme': 'Optionnel : nom d\'un fournisseur, pour n\'avoir que sa fiche détaillée.',
+    'tri':
+        '« unites » (défaut), « entrees », « recent » (dernier achat), ou « inactif » '
+            '(ceux dont on n\'a plus rien reçu depuis longtemps).',
+    'limite': 'Nombre de lignes, 20 par défaut, 100 au maximum.',
+  },
+  executer: (args, d) {
+    if (d.fournisseurs.isEmpty) {
+      return 'FOURNISSEURS : aucun fournisseur enregistré. '
+          'Ils se saisissent depuis la page Fournisseurs, ou au moment d\'un '
+          'achat depuis la fiche d\'un article.';
+    }
+
+    // Une entrée de stock ne compte pour un fournisseur que si elle porte son
+    // identifiant. Les entrées anciennes, saisies avant que les fournisseurs
+    // n'existent, n'en portent pas : elles ne sont attribuées à personne
+    // plutôt qu'au premier venu.
+    final parFournisseur = <String, ({int entrees, int unites, Set<String> articles, String derniere})>{};
+    for (final m in d.mouvements) {
+      final id = m.fournisseurId;
+      if (m.type != 'entrée' || id == null || id.isEmpty) continue;
+      final e = parFournisseur[id] ??
+          (entrees: 0, unites: 0, articles: <String>{}, derniere: '');
+      parFournisseur[id] = (
+        entrees: e.entrees + 1,
+        unites: e.unites + m.quantite,
+        articles: e.articles..add(m.articleId),
+        derniere: m.date.compareTo(e.derniere) > 0 ? m.date : e.derniere,
+      );
+    }
+
+    String nomArticle(String id) =>
+        d.articles.where((a) => a.id == id).firstOrNull?.nom ?? id;
+
+    // Fiche détaillée d'un fournisseur nommé.
+    final terme = '${args['terme'] ?? ''}'.trim();
+    if (terme.isNotEmpty) {
+      final trouves = d.fournisseurs
+          .where((f) => _correspond([f.id, f.nom, f.telephone], terme))
+          .toList();
+      if (trouves.isEmpty) {
+        return 'Aucun fournisseur ne correspond à « $terme ». '
+            'Appelle « fournisseurs » sans terme pour voir la liste complète.';
+      }
+      if (trouves.length > 1) {
+        return 'Plusieurs fournisseurs correspondent à « $terme » : '
+            '${trouves.map((f) => f.nom).join(', ')}. Précise lequel.';
+      }
+      final f = trouves.first;
+      final s = parFournisseur[f.id];
+      final entrees = d.mouvements
+          .where((m) => m.fournisseurId == f.id && m.type == 'entrée')
+          .toList()
+        ..sort((a, b) => b.date.compareTo(a.date));
+
+      return <String>[
+        'FOURNISSEUR — ${f.nom}',
+        if (f.telephone.isNotEmpty) 'Téléphone : ${f.telephone}',
+        if (f.email.isNotEmpty) 'Courriel : ${f.email}',
+        if ([f.adresse, f.quartier, f.ville].any((x) => x.isNotEmpty))
+          'Adresse : ${[f.adresse, f.quartier, f.ville].where((x) => x.isNotEmpty).join(', ')}',
+        '',
+        s == null
+            ? 'Aucune entrée de stock enregistrée chez lui.'
+            : '${s.entrees} entrée·s | ${fmtNombre(s.unites)} unités reçues | '
+                '${s.articles.length} article·s fourni·s | '
+                'dernier achat le ${_fmtDate(s.derniere)}',
+        if (entrees.isNotEmpty) '',
+        for (final m in entrees.take(15))
+          '- ${_fmtDate(m.date, court: true)} : +${fmtNombre(m.quantite)} × ${nomArticle(m.articleId)}'
+              '${m.fournisseurQuartier != null && m.fournisseurQuartier!.isNotEmpty ? ' (${m.fournisseurQuartier})' : ''}',
+        if (entrees.length > 15) '… ${entrees.length - 15} autres entrées.',
+      ].join('\n');
+    }
+
+    final limite = _nb(args['limite'], 20).clamp(1, 100).toInt();
+    final tri = (args['tri'] ?? 'unites').toString().toLowerCase();
+
+    final lignes = d.fournisseurs.map((f) {
+      final s = parFournisseur[f.id];
+      return (
+        f: f,
+        entrees: s?.entrees ?? 0,
+        unites: s?.unites ?? 0,
+        articles: s?.articles.length ?? 0,
+        derniere: s?.derniere ?? '',
+        jours: (s == null || s.derniere.isEmpty)
+            ? null
+            : _joursDepuis(s.derniere),
+      );
+    }).toList();
+
+    lignes.sort((a, b) {
+      switch (tri) {
+        case 'entrees':
+        case 'entrées':
+          return b.entrees - a.entrees;
+        case 'recent':
+          return b.derniere.compareTo(a.derniere);
+        case 'inactif':
+          return (b.jours ?? 99999) - (a.jours ?? 99999);
+        default:
+          return b.unites - a.unites;
+      }
+    });
+
+    return <String>[
+      'FOURNISSEURS — ${d.fournisseurs.length} au total, triés par $tri',
+      '${fmtNombre(lignes.fold<int>(0, (s, x) => s + x.unites))} unités reçues '
+          'sur ${lignes.fold<int>(0, (s, x) => s + x.entrees)} entrées de stock',
+      '',
+      for (final l in lignes.take(limite))
+        '- ${l.f.nom}'
+            '${l.f.telephone.isNotEmpty ? ' (${l.f.telephone})' : ''}'
+            '${l.f.quartier.isNotEmpty ? ' — ${l.f.quartier}' : ''} : '
+            '${l.entrees == 0 ? 'aucune entrée enregistrée' : '${fmtNombre(l.unites)} unités, '
+                '${l.articles} article·s, dernier achat ${_fmtDate(l.derniere, court: true)}'
+                '${l.jours != null ? ' (il y a ${l.jours} j)' : ''}'}',
+      if (lignes.length > limite)
+        '… ${lignes.length - limite} autres fournisseurs non détaillés.',
+    ].join('\n');
+  },
+);
+
 final _listerClients = OutilIA(
   nom: 'lister_clients',
   description:
@@ -1227,6 +1367,7 @@ final List<OutilIA> kOutils = [
   _chercherDepenses,
   _listerArticles,
   _listerClients,
+  _fournisseurs,
   _journalActivite,
   _equipeEtParametres,
 ];
