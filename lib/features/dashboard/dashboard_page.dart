@@ -92,26 +92,16 @@ final valeurStockProvider = Provider<int>((ref) {
   return valeurStockAchat(articles);
 });
 
-/// Trésorerie nette (Fonds disponibles)
+/// Ce que l'activité a fait entrer net dans la caisse depuis l'origine.
+///
+/// L'addition elle-même est dans `finance_engine.dart`, avec toutes les autres :
+/// écrite ici, elle aurait fini par dire autre chose que la page Finances, qui
+/// calcule le même flux de trésorerie par le bilan.
 final tresorerieNetteProvider = Provider<int>((ref) {
-  final factures = ref.watch(toutesFacturesProvider).valueOrNull ?? [];
-  final depenses = ref.watch(toutesDepensesProvider).valueOrNull ?? [];
-
-  int totalEncaisse = 0;
-  for (final facture in factures) {
-    for (final paiement in facture.paiements) {
-      totalEncaisse += paiement.montant;
-    }
-  }
-
-  int totalDecaisse = 0;
-  for (final depense in depenses) {
-    for (final reglement in depense.reglements) {
-      totalDecaisse += reglement.montant;
-    }
-  }
-
-  return totalEncaisse - totalDecaisse;
+  return tresorerieNette(
+    factures: ref.watch(toutesFacturesProvider).valueOrNull ?? const [],
+    depenses: ref.watch(toutesDepensesProvider).valueOrNull ?? const [],
+  );
 });
 
 /// Factures impayées (nombre et total restant dû)
@@ -424,11 +414,18 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
     return ConstrainedBox(
       constraints: const BoxConstraints(minWidth: kLargeurStatTile),
       child: StatTile(
-        libelle: 'En caisse (Réel)',
+        libelle: 'En caisse',
         valeur: _fmtMontantDashboard(valeur, masque),
-        sousTitre: 'En caisse',
+        // Le sous-titre répétait le libellé. Il dit maintenant CE QUE le
+        // chiffre recouvre : un cumul de mouvements, pas le contenu du coffre —
+        // ni le fonds de caisse d'origine ni les prélèvements du gérant n'étant
+        // enregistrés nulle part.
+        sousTitre: 'Encaissé − décaissé',
         icone: Icons.account_balance_wallet_rounded,
-        couleurValeur: const Color(0xFF673AB7), // Deep purple for cash
+        couleurValeur: valeur < 0
+            ? context.metier.danger
+            : context.metier.succes,
+        onTap: () => context.goNamed('finances'),
       ),
     );
   }

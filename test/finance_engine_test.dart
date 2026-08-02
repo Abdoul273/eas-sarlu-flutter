@@ -2,6 +2,8 @@
 import '../lib/core/models/models.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'fixtures.dart';
+
 void main() {
   group('FinanceEngine - Core Math Tests', () {
     test('borneRemise clamps between 0 and 100', () {
@@ -117,6 +119,79 @@ void main() {
       expect(bilan.encaissements, 850000);
       expect(bilan.decaissements, 100000);
       expect(bilan.fluxTresorerie, 750000); // 850000 - 100000
+    });
+  });
+
+  // ─── Trésorerie ─────────────────────────────────────────────────────────────
+  // Le chiffre affiché sous « En caisse » sur le tableau de bord. Les mêmes
+  // affirmations existent mot pour mot dans `src/lib/__tests__/finance.test.ts`
+  // de l'application web : les deux applications regardent le même magasin et
+  // ne peuvent pas en annoncer deux états différents.
+
+  group('tresorerieNette', () {
+    test("compte l'argent entré moins l'argent sorti", () {
+      final f = facture(
+        montantTTC: 500000,
+        paiements: [paiement(montant: 300000)],
+      );
+      final d = depense(
+        montant: 500000,
+        reglements: [reglement(montant: 120000)],
+      );
+
+      expect(tresorerieNette(factures: [f], depenses: [d]), 180000);
+    });
+
+    test("ignore ce qui n'a pas bougé : le dû n'est pas de l'encaissé", () {
+      // Être bénéficiaire et sans un franc est un état parfaitement possible :
+      // c'est exactement ce que cette lecture doit savoir dire.
+      final f = facture(montantTTC: 500000);
+      final d = depense(montant: 500000);
+
+      expect(tresorerieNette(factures: [f], depenses: [d]), 0);
+    });
+
+    test("devient négatif quand on a plus payé qu'encaissé", () {
+      final f = facture(paiements: [paiement(montant: 50000)]);
+      final d = depense(reglements: [reglement(montant: 200000)]);
+
+      expect(tresorerieNette(factures: [f], depenses: [d]), -150000);
+    });
+
+    test('se restreint à une période sur la date du MOUVEMENT, pas de la pièce',
+        () {
+      // Un versement de mars sur une facture de février est une recette de mars.
+      final f = facture(
+        dateEmission: '2026-02-10T10:00:00.000Z',
+        paiements: [paiement(date: '2026-03-05T10:00:00.000Z', montant: 90000)],
+      );
+
+      expect(
+          tresorerieNette(
+              factures: [f], depenses: [], periode: Periode.mois(2026, 2)),
+          0);
+      expect(
+          tresorerieNette(
+              factures: [f], depenses: [], periode: Periode.mois(2026, 3)),
+          90000);
+    });
+
+    test('dit la même chose que le flux de trésorerie du bilan', () {
+      final factures = [
+        facture(paiements: [paiement(montant: 300000)])
+      ];
+      final depenses = [
+        depense(reglements: [reglement(montant: 120000)])
+      ];
+      final bilan = calculerBilan(
+        ventes: const [],
+        factures: factures,
+        depenses: depenses,
+        articles: const [],
+      );
+
+      expect(tresorerieNette(factures: factures, depenses: depenses),
+          bilan.fluxTresorerie);
     });
   });
 }

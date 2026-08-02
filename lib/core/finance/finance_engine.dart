@@ -401,6 +401,37 @@ int valeurStockAchat(List<Article> articles) =>
 int valeurStockVente(List<Article> articles) =>
     articles.fold<int>(0, (s, a) => s + a.stock * a.prixVente);
 
+// ─── Trésorerie ───────────────────────────────────────────────────────────────
+
+/// Ce qui est réellement passé par la caisse depuis l'origine : tout ce que les
+/// clients ont versé, moins tout ce qui est sorti pour régler des dépenses.
+///
+/// C'est un CUMUL DE MOUVEMENTS, pas un solde de coffre. Il ne connaît ni le
+/// fonds de caisse du premier jour, ni ce que le gérant a pu prélever pour lui :
+/// ces deux montants ne sont enregistrés nulle part. Il répond exactement à la
+/// question « combien d'argent l'activité a-t-elle fait entrer net ? », et c'est
+/// à ce titre qu'il est affiché.
+///
+/// Les factures non réglées et les dépenses non payées n'y figurent pas : elles
+/// n'ont pas bougé un franc. Elles se lisent dans `creancesClients` et
+/// `dettesFournisseurs` du [Bilan].
+///
+/// Défini à partir de [calculerBilan] et non recalculé à côté : le tableau de
+/// bord et la page Finances doivent annoncer le même chiffre, et deux additions
+/// écrites séparément finissent toujours par diverger.
+int tresorerieNette({
+  required List<Facture> factures,
+  required List<Depense> depenses,
+  Periode? periode,
+}) =>
+    calculerBilan(
+      ventes: const [],
+      factures: factures,
+      depenses: depenses,
+      articles: const [],
+      periode: periode,
+    ).fluxTresorerie;
+
 // ─── Compte de résultat & trésorerie ──────────────────────────────────────────
 
 class LigneCategorie {
