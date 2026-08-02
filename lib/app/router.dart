@@ -157,10 +157,10 @@ final routerProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: '/ventes/:id/modifier',
         name: 'modifier-vente',
-        builder: (context, state) {
-          final vente = state.extra as Vente;
-          return ModifierVentePage(venteInitiale: vente);
-        },
+        builder: (context, state) => ModifierVenteParId(
+          venteId: state.pathParameters['id']!,
+          vente: state.extra is Vente ? state.extra as Vente : null,
+        ),
       ),
       GoRoute(
         path: '/stock/article/nouveau',

@@ -532,4 +532,170 @@ void main() {
     expect(article?.stock, 42);
     expect(article?.rev, 2);
   });
+
+  // ─── Modification d'une vente ───────────────────────────────────────────────
+  // Ces opérations partaient auparavant sous le type « vente », c'est-à-dire par
+  // la route de CRÉATION du serveur : un nouveau numéro était alloué, le stock
+  // redéduit une seconde fois, et la mise à jour rejetée en silence. Elles ont
+  // désormais leur propre type, et le moteur doit le traiter partout.
+
+  Vente venteDeDepart() => Vente(
+        id: 'v1',
+        numero: 'VTE-2026-0001',
+        date: '2026-08-01T10:00:00.000Z',
+        clientId: 'c1',
+        lignes: [
+          LigneVente(
+            articleId: 'a1',
+            articleRef: 'FER8',
+            articleNom: 'Fer à béton 8',
+            unite: 'Barre',
+            qte: 10,
+            prixUnitaire: 50000,
+            total: 500000,
+          ),
+        ],
+        totalHT: 500000,
+        totalNet: 500000,
+        rev: 3,
+      );
+
+  test('la réponse du serveur remplace la vente, la facture et les stocks',
+      () async {
+    final engine = creerMoteur();
+    await stores.upsert('vente', venteDeDepart());
+    await stores.upsert('article',
+        Article(id: 'a1', nom: 'Fer à béton 8', unite: 'Barre', stock: 0));
+
+    final opId = await opQueue.enqueue('vente_modification', {
+      'venteId': 'v1',
+      'lignes': const <dynamic>[],
+      'clientId': 'c1',
+    });
+
+    final ops = await opQueue.getPendingOperations();
+    await engine.debugTraiterResultat(ops, {
+      'id': opId,
+      'type': 'vente_modification',
+      'statut': 'applique',
+      'result': {
+        'ok': true,
+        'vente': {
+          'id': 'v1',
+          'numero': 'VTE-2026-0001',
+          'date': '2026-08-01T10:00:00.000Z',
+          'clientId': 'c1',
+          'lignes': [
+            {
+              'articleId': 'a1',
+              'articleRef': 'FER8',
+              'articleNom': 'Fer à béton 8',
+              'unite': 'Barre',
+              'qte': 6,
+              'prixUnitaire': 50000,
+              'total': 300000,
+            }
+          ],
+          'totalHT': 300000,
+          'totalNet': 300000,
+          '_rev': 4,
+        },
+        'facture': {
+          'id': 'f1',
+          'numero': 'FAC-2026-0001',
+          'venteId': 'v1',
+          'clientId': 'c1',
+          'dateEmission': '2026-08-01T10:00:00.000Z',
+          'montantHT': 300000,
+          'montantTTC': 300000,
+          'paiements': [],
+        },
+        // Le numéro de vente est CONSERVÉ, et le stock rendu par le serveur
+        // fait foi : c'est lui qui a recalculé l'écart d'après la vente telle
+        // qu'elle était enregistrée.
+        'articles': [
+          {'id': 'a1', 'nom': 'Fer à béton 8', 'unite': 'Barre', 'stock': 4},
+        ],
+        'mouvements': [
+          {
+            'id': 'mv1',
+            'articleId': 'a1',
+            'type': 'entrée',
+            'quantite': 4,
+            'date': '2026-08-02T09:00:00.000Z',
+          }
+        ],
+      },
+    });
+
+    final vente = await stores.getVente('v1');
+    expect(vente?.numero, 'VTE-2026-0001',
+        reason: 'une modification ne doit jamais rebaptiser la vente');
+    expect(vente?.totalNet, 300000);
+    expect(vente?.lignes.single.qte, 6);
+
+    expect((await stores.getFacture('f1'))?.montantTTC, 300000);
+    expect((await stores.getArticle('a1'))?.stock, 4,
+        reason: 'les 4 barres retirées de la vente reviennent en stock');
+    expect((await stores.getMouvement('mv1'))?.type, 'entrée');
+    expect(await opQueue.getPendingOperations(), isEmpty);
+  });
+
+  test('le pull n\'efface pas une modification de vente encore en file',
+      () async {
+    final engine = creerMoteur();
+    await stores.upsert('vente', venteDeDepart());
+
+    await opQueue.enqueue('vente_modification', {
+      'venteId': 'v1',
+      'clientId': 'c1',
+      'lignes': [
+        {
+          'articleId': 'a1',
+          'articleRef': 'FER8',
+          'articleNom': 'Fer à béton 8',
+          'unite': 'Barre',
+          'qte': 6,
+          'prixUnitaire': 50000,
+          'total': 300000,
+        }
+      ],
+    });
+
+    // Le serveur ne connaît pas encore la modification : son instantané porte
+    // toujours les dix barres.
+    await engine.debugAppliquerInstantane({
+      'articles': [], 'clients': [], 'factures': [], 'depenses': [],
+      'mouvements': [],
+      'ventes': [
+        {
+          'id': 'v1',
+          'numero': 'VTE-2026-0001',
+          'date': '2026-08-01T10:00:00.000Z',
+          'clientId': 'c1',
+          'lignes': [
+            {
+              'articleId': 'a1',
+              'articleRef': 'FER8',
+              'articleNom': 'Fer à béton 8',
+              'unite': 'Barre',
+              'qte': 10,
+              'prixUnitaire': 50000,
+              'total': 500000,
+            }
+          ],
+          'totalHT': 500000,
+          'totalNet': 500000,
+          '_rev': 3,
+        }
+      ],
+    });
+    await engine.debugRejouerOperationsLocales();
+
+    final vente = await stores.getVente('v1');
+    expect(vente?.totalNet, 300000,
+        reason: 'la correction ne doit pas disparaître sous les yeux '
+            "de l'utilisateur au premier instantané suivant");
+    expect(vente?.lignes.single.qte, 6);
+  });
 }

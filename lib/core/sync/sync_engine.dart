@@ -427,6 +427,7 @@ class SyncEngine {
 
   String _libelleParDefaut(String type) => switch (type) {
         'vente' => 'Vente',
+        'vente_modification' => 'Modification de vente',
         'client' => 'Client',
         'article' => 'Article',
         'mouvement' => 'Mouvement de stock',
@@ -447,9 +448,15 @@ class SyncEngine {
 
     switch (type) {
       case 'vente':
-        // Réponse : { vente, facture, mouvements }. Les numéros VTE/FAC sont
-        // attribués par le serveur : sans cette fusion, la vente et sa facture
-        // resteraient sans numéro dans l'application.
+      case 'vente_modification':
+        // Réponse : { vente, facture, mouvements, articles }. Les numéros
+        // VTE/FAC sont attribués par le serveur : sans cette fusion, la vente et
+        // sa facture resteraient sans numéro dans l'application.
+        //
+        // Pour une modification, le serveur renvoie en plus les articles dont
+        // le stock a bougé. C'est SON calcul qui fait foi : il a recalculé les
+        // écarts d'après la vente enregistrée, quand le téléphone les avait
+        // calculés d'après la copie qu'il avait sous la main.
         final vente = r['vente'];
         if (vente != null) await _stores.upsert('vente', Vente.fromJson(vente));
         final facture = r['facture'];
@@ -458,6 +465,9 @@ class SyncEngine {
         }
         for (final m in (r['mouvements'] as List? ?? const [])) {
           await _stores.upsert('mouvement', MouvementStock.fromJson(m));
+        }
+        for (final a in (r['articles'] as List? ?? const [])) {
+          await _stores.upsert('article', Article.fromJson(a));
         }
 
       case 'client':
@@ -627,6 +637,53 @@ class SyncEngine {
           if (article == null) continue;
           await _stores.upsert('article',
               article.copyWith(stock: article.stock - (ligne['quantite'] as int)));
+        }
+
+      case 'vente_modification':
+        // La modification n'est pas encore partie : elle doit primer sur la
+        // vente tout juste récupérée du serveur, qui porte encore les anciennes
+        // lignes. Sans ce rejeu, l'écran « oubliait » la correction dès le
+        // premier instantané suivant, sous les yeux de l'utilisateur.
+        //
+        // Le stock, lui, n'est PAS retouché ici : il l'a été au moment de la
+        // saisie, et l'instantané du serveur ne connaît pas encore la
+        // modification. Le recalculer reviendrait à appliquer deux fois le même
+        // écart.
+        final venteId = payload['venteId'] as String?;
+        if (venteId == null) return;
+        final existante = await _stores.getVente(venteId);
+        if (existante == null) return;
+
+        final lignes = (payload['lignes'] as List? ?? const [])
+            .map((l) => LigneVente.fromJson(l as Map<String, dynamic>))
+            .toList();
+        if (lignes.isEmpty) return;
+        final total = lignes.fold<int>(0, (s, l) => s + l.total);
+
+        // Déjà appliquée côté serveur : ses lignes correspondent déjà à ce
+        // qu'on voulait, il n'y a rien à rejouer.
+        if (existante.totalNet == total &&
+            existante.lignes.length == lignes.length) {
+          return;
+        }
+
+        await _stores.upsert(
+          'vente',
+          existante.copyWith(
+            clientId: payload['clientId'] as String? ?? existante.clientId,
+            lignes: lignes,
+            totalHT: total,
+            totalNet: total,
+          ),
+        );
+
+        final factureId = payload['factureId'] as String?;
+        if (factureId != null) {
+          final facture = await _stores.getFacture(factureId);
+          if (facture != null) {
+            await _stores.upsert('facture',
+                facture.copyWith(montantHT: total, montantTTC: total));
+          }
         }
 
       case 'client':

@@ -29,6 +29,56 @@ class LignePanier {
   int get total => quantite * prixUnitaire;
 }
 
+/// Ouvre la modification d'une vente à partir de son seul identifiant.
+///
+/// La route passait la vente entière dans `extra` et la lisait par un `as
+/// Vente` sec. Tout ce qui atteint l'écran sans passer par le bouton — lien
+/// direct, retour arrière, redémarrage à chaud, clic sur une notification —
+/// arrive sans `extra` et faisait alors tomber l'application sur un écran
+/// rouge. L'identifiant, lui, est toujours dans l'URL.
+class ModifierVenteParId extends ConsumerWidget {
+  const ModifierVenteParId({super.key, required this.venteId, this.vente});
+
+  final String venteId;
+
+  /// La vente déjà en main, quand l'écran précédent l'avait ; évite un
+  /// clignotement de chargement dans le cas courant.
+  final Vente? vente;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    if (vente != null) return ModifierVentePage(venteInitiale: vente!);
+
+    return FutureBuilder<Vente?>(
+      future: ref.read(storesProvider).getVente(venteId),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState != ConnectionState.done) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
+        final trouvee = snapshot.data;
+        if (trouvee == null) {
+          return Scaffold(
+            appBar: AppBar(title: const Text('Modifier la vente')),
+            body: const Center(
+              child: Padding(
+                padding: EdgeInsets.all(Espace.xl),
+                child: Text(
+                  'Cette vente est introuvable sur cet appareil.\n'
+                  'Synchronisez, puis réessayez.',
+                  textAlign: TextAlign.center,
+                ),
+              ),
+            ),
+          );
+        }
+        return ModifierVentePage(venteInitiale: trouvee);
+      },
+    );
+  }
+}
+
 class ModifierVentePage extends ConsumerStatefulWidget {
   final Vente venteInitiale;
 
@@ -50,9 +100,26 @@ class _ModifierVentePageState extends ConsumerState<ModifierVentePage> {
   final List<LignePanier> _panier = [];
   final _uuid = const Uuid();
 
+  /// Empêche un second envoi tant que le premier n'est pas terminé. Sans lui,
+  /// un double appui sur « Enregistrer » déposait DEUX modifications dans la
+  /// file, et le stock encaissait deux fois le même écart.
+  bool _envoiEnCours = false;
+
+  /// Quantités déjà sorties du stock par la vente en cours de modification,
+  /// article par article.
+  ///
+  /// Elles sont indispensables au calcul du disponible : le stock affiché tient
+  /// déjà compte de cette vente. Sans ce crédit, une vente qui a vidé le stock
+  /// d'un article rendait cet article impossible à conserver dans sa propre
+  /// modification — la quantité retombait silencieusement à 1.
+  final Map<String, int> _dejaSorti = {};
+
   @override
   void initState() {
     super.initState();
+    for (final l in widget.venteInitiale.lignes) {
+      _dejaSorti[l.articleId] = (_dejaSorti[l.articleId] ?? 0) + l.qte;
+    }
     _clientController.addListener(
         () => setState(() => _clientQuery = _clientController.text.trim()));
     _articleController.addListener(
@@ -69,31 +136,30 @@ class _ModifierVentePageState extends ConsumerState<ModifierVentePage> {
     }
 
     for (final ligne in widget.venteInitiale.lignes) {
-      Article? article = await stores.getArticle(ligne.articleId);
-      if (article == null) {
-        article = Article(
-          id: ligne.articleId,
-          ref: ligne.articleRef,
-          nom: ligne.articleNom,
-          categorie: 'Inconnu',
-          description: 'Article supprimé ou non synchronisé',
-          unite: ligne.unite,
-          prixAchat: 0,
-          prixVente: ligne.prixUnitaire,
-          stock: 0,
-          stockMin: 0,
-        );
-      }
-      if (mounted) {
-        setState(() {
-          _panier.add(LignePanier(
-            id: _uuid.v4(),
-            article: article!,
-            quantite: ligne.qte,
-            prixUnitaire: ligne.prixUnitaire,
-          ));
-        });
-      }
+      // Un article disparu du catalogue est reconstitué à partir de la ligne de
+      // vente : sans cela, modifier une vente ancienne perdait ses lignes.
+      final article = await stores.getArticle(ligne.articleId) ??
+          Article(
+            id: ligne.articleId,
+            ref: ligne.articleRef,
+            nom: ligne.articleNom,
+            categorie: 'Inconnu',
+            description: 'Article supprimé ou non synchronisé',
+            unite: ligne.unite,
+            prixAchat: 0,
+            prixVente: ligne.prixUnitaire,
+            stock: 0,
+            stockMin: 0,
+          );
+      if (!mounted) return;
+      setState(() {
+        _panier.add(LignePanier(
+          id: _uuid.v4(),
+          article: article,
+          quantite: ligne.qte,
+          prixUnitaire: ligne.prixUnitaire,
+        ));
+      });
     }
   }
 
@@ -104,12 +170,20 @@ class _ModifierVentePageState extends ConsumerState<ModifierVentePage> {
     super.dispose();
   }
 
+  /// Ce qu'il reste à prendre pour cet article, dans le contexte d'une
+  /// MODIFICATION.
+  ///
+  /// Le stock enregistré tient déjà compte des quantités que cette vente a
+  /// sorties : on les remet donc au pot avant de retrancher le panier en cours.
+  /// Sans ce crédit, modifier une vente qui avait vidé le stock d'un article
+  /// ramenait sa quantité à 1 sans rien dire, et la correction sortait du
+  /// magasin de la marchandise qu'il n'avait jamais eue.
   int stockDisponible(Article article) {
-    final stockInitial = article.stock;
+    final creditVenteEnCours = _dejaSorti[article.id] ?? 0;
     final reserve = _panier
         .where((l) => l.article.id == article.id)
         .fold<int>(0, (sum, l) => sum + l.quantite);
-    return stockInitial - reserve;
+    return article.stock + creditVenteEnCours - reserve;
   }
 
   void _ajouterAuPanier(Article article) {
@@ -156,45 +230,35 @@ class _ModifierVentePageState extends ConsumerState<ModifierVentePage> {
     setState(() => ligne.prixUnitaire = prix);
   }
 
+  void _avertir(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+      content: Text(message),
+      backgroundColor: Theme.of(context).colorScheme.error,
+    ));
+  }
+
   Future<void> _encaisser() async {
+    if (_envoiEnCours) return;
     if (_panier.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Le panier est vide')));
+      _avertir('Le panier est vide');
       return;
     }
 
+    setState(() => _envoiEnCours = true);
+    try {
+      await _enregistrerModification();
+    } catch (e) {
+      // Une erreur silencieuse sur une modification de vente, c'est un écran
+      // qui laisse croire que tout est enregistré alors que rien ne l'est.
+      if (mounted) _avertir('Modification non enregistrée : $e');
+    } finally {
+      if (mounted) setState(() => _envoiEnCours = false);
+    }
+  }
+
+  Future<void> _enregistrerModification() async {
     final stores = ref.read(storesProvider);
     final opQueue = ref.read(opQueueProvider);
-
-    // Calculer les différences de stock (delta = nouvelle qte - ancienne qte)
-    final Map<String, int> deltas = {};
-
-    // Annuler les anciennes quantités (delta négatif)
-    for (final oldLigne in widget.venteInitiale.lignes) {
-      deltas[oldLigne.articleId] = (deltas[oldLigne.articleId] ?? 0) - oldLigne.qte;
-    }
-
-    // Appliquer les nouvelles quantités (delta positif)
-    for (final newLigne in _panier) {
-      deltas[newLigne.article.id] = (deltas[newLigne.article.id] ?? 0) + newLigne.quantite;
-    }
-
-    // Mettre à jour le stock local
-    final lignesStockPourServeur = <Map<String, dynamic>>[];
-    for (final articleId in deltas.keys) {
-      final delta = deltas[articleId]!;
-      if (delta != 0) {
-        final article = await stores.getArticle(articleId);
-        if (article != null) {
-          final articleMaj = article.copyWith(stock: article.stock - delta);
-          await stores.upsert('article', articleMaj);
-        }
-        lignesStockPourServeur.add({
-          'articleId': articleId,
-          'quantite': delta,
-        });
-      }
-    }
 
     final lignes = _panier
         .map((l) => LigneVente(
@@ -209,41 +273,98 @@ class _ModifierVentePageState extends ConsumerState<ModifierVentePage> {
             ))
         .toList();
 
-    final totalHT = lignes.fold<int>(0, (sum, l) => sum + l.total);
-    final totalNet = totalHT;
+    final totalNet = lignes.fold<int>(0, (sum, l) => sum + l.total);
 
-    // Mise à jour de la vente
+    // La facture porte les versements : c'est elle qui dit si la modification
+    // est recevable. Lecture ponctuelle, et non `watchFactures().first` : cette
+    // dernière ouvrait un flux drift qu'aucun code ne refermait.
+    final factures = await stores.getFactures();
+    Facture? factureLiee;
+    for (final f in factures) {
+      if (f.venteId == widget.venteInitiale.id) {
+        factureLiee = f;
+        break;
+      }
+    }
+
+    // On ne descend jamais une vente sous ce qui a déjà été encaissé dessus :
+    // le magasin se retrouverait débiteur de son propre client sans que
+    // personne ne l'ait décidé. Le serveur applique la même règle — celle-ci
+    // n'est là que pour l'expliquer avant l'envoi plutôt qu'après.
+    if (factureLiee != null) {
+      final encaisse = montantPaye(factureLiee);
+      if (encaisse > totalNet) {
+        _avertir(
+            'Cette vente a déjà été réglée à hauteur de ${fmtGNF(encaisse)}. '
+            'Annulez d\'abord le versement pour la ramener à ${fmtGNF(totalNet)}.');
+        return;
+      }
+    }
+
+    // Écarts de stock : quantité voulue moins quantité déjà sortie. Positif, la
+    // marchandise sort ; négatif, elle rentre.
+    final deltas = <String, int>{};
+    for (final ancienne in widget.venteInitiale.lignes) {
+      deltas[ancienne.articleId] =
+          (deltas[ancienne.articleId] ?? 0) - ancienne.qte;
+    }
+    for (final nouvelle in _panier) {
+      deltas[nouvelle.article.id] =
+          (deltas[nouvelle.article.id] ?? 0) + nouvelle.quantite;
+    }
+
+    for (final entree in deltas.entries) {
+      if (entree.value == 0) continue;
+      final article = await stores.getArticle(entree.key);
+      if (article == null) continue;
+      // Jamais de stock négatif à l'écran : le serveur borne lui aussi à zéro,
+      // et laisser passer un négatif ferait diverger les deux affichages.
+      final nouveauStock = article.stock - entree.value;
+      await stores.upsert(
+          'article', article.copyWith(stock: nouveauStock < 0 ? 0 : nouveauStock));
+    }
+
     final venteMaj = widget.venteInitiale.copyWith(
       clientId: _clientSelectionne?.id ?? '',
       lignes: lignes,
-      totalHT: totalHT,
+      totalHT: totalNet,
       totalNet: totalNet,
     );
-
     await stores.upsert('vente', venteMaj);
 
-    // Mise à jour de la facture associée
-    Facture? factureMaj;
-    try {
-      final factures = await stores.watchFactures().first;
-      final factureInitiale = factures.firstWhere((f) => f.venteId == widget.venteInitiale.id);
-
-      factureMaj = factureInitiale.copyWith(
-        clientId: _clientSelectionne?.id ?? '',
-        montantHT: totalNet,
-        montantTTC: totalNet,
+    if (factureLiee != null) {
+      await stores.upsert(
+        'facture',
+        factureLiee.copyWith(
+          clientId: _clientSelectionne?.id ?? '',
+          montantHT: totalNet,
+          montantTTC: totalNet,
+        ),
       );
-      await stores.upsert('facture', factureMaj);
-    } catch (_) {}
+    }
 
-    await opQueue.enqueue('vente', {
-      'vente': venteMaj.toJson(),
-      'facture': factureMaj?.toJson(),
-      'lignesStock': lignesStockPourServeur,
+    // Opération DÉDIÉE, et non « vente ».
+    //
+    // Renvoyée comme une vente, la modification était traitée par le serveur
+    // comme une vente neuve : nouveau numéro VTE et FAC, stock redéduit une
+    // seconde fois — y compris quand on RÉDUISAIT la vente — et écriture
+    // rejetée en silence puisque l'identifiant existait déjà. La correction
+    // disparaissait au premier instantané suivant, en laissant le stock faux.
+    //
+    // Les écarts ne sont volontairement pas transmis : le serveur les recalcule
+    // d'après la vente enregistrée. Ceux calculés ici valent pour l'état que ce
+    // téléphone connaît, qui peut dater d'avant la dernière synchronisation.
+    await opQueue.enqueue('vente_modification', {
+      'venteId': widget.venteInitiale.id,
+      'lignes': lignes.map((l) => l.toJson()).toList(),
+      'clientId': _clientSelectionne?.id ?? '',
+      if (widget.venteInitiale.rev != null) 'baseRev': widget.venteInitiale.rev,
+      if (factureLiee != null) 'factureId': factureLiee.id,
     });
 
+    if (!mounted) return;
     HapticFeedback.mediumImpact();
-    _showConfirmation(factureMaj?.id ?? '');
+    _showConfirmation(factureLiee?.id ?? '');
   }
 
   void _showConfirmation(String factureId) {
@@ -562,10 +683,14 @@ class _ModifierVentePageState extends ConsumerState<ModifierVentePage> {
                   ),
                   const SizedBox(height: Espace.md),
                   AppButton(
-                    label: 'Mettre à jour (${fmtGNF(totalHT)})',
+                    label: _envoiEnCours
+                        ? 'Enregistrement…'
+                        : 'Mettre à jour (${fmtGNF(totalHT)})',
                     icon: Icons.point_of_sale_rounded,
                     expanded: true,
-                    onPressed: _panier.isNotEmpty ? _encaisser : null,
+                    onPressed: _panier.isNotEmpty && !_envoiEnCours
+                        ? _encaisser
+                        : null,
                   ),
                 ],
               ),
