@@ -1530,11 +1530,12 @@ Future<Uint8List> genererRapportPdf(
                   couleur: a.stock == 0 ? _rouge : _ambre),
               g.celluleTexte(numFRPdf(a.stockMin),
                   droite: true, taille: 8, couleur: _n666),
-              g.cellule(pw.Align(
-                alignment: pw.Alignment.centerLeft,
-                child: g.pastille(a.stock == 0 ? 'Rupture' : 'Stock faible',
-                    a.stock == 0 ? _rouge : _ambre),
-              )),
+              // Le mot seul, sans le cadre arrondi de la pastille : la colonne
+              // ne porte qu'un état, la couleur suffit à le distinguer, et le
+              // contour serrait « Stock faible » au point de le faire passer à
+              // la ligne dans une colonne étroite.
+              g.celluleTexte(a.stock == 0 ? 'Rupture' : 'Stock faible',
+                  fort: true, couleur: a.stock == 0 ? _rouge : _ambre),
             ],
         ],
       ),
