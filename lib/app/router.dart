@@ -11,6 +11,8 @@ import '../features/bons/bons_livraison_page.dart';
 import '../features/calculateur/calculateur_page.dart';
 import '../features/clients/client_detail_page.dart';
 import '../features/clients/clients_page.dart';
+import '../features/fournisseurs/fournisseur_detail_page.dart';
+import '../features/fournisseurs/fournisseurs_page.dart';
 import '../features/dashboard/dashboard_page.dart';
 import '../features/depenses/depense_form_page.dart';
 import '../features/depenses/depenses_page.dart';
@@ -133,6 +135,13 @@ final routerProvider = Provider<GoRouter>((ref) {
               child: ClientsPage(),
             ),
           ),
+          GoRoute(
+            path: '/fournisseurs',
+            name: 'fournisseurs',
+            pageBuilder: (context, state) => const NoTransitionPage(
+              child: FournisseursPage(),
+            ),
+          ),
         ],
       ),
       GoRoute(
@@ -185,6 +194,13 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/clients/:id',
         name: 'detail-client',
         builder: (context, state) => ClientDetailPage(
+          id: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: '/fournisseurs/:id',
+        name: 'detail-fournisseur',
+        builder: (context, state) => FournisseurDetailPage(
           id: state.pathParameters['id']!,
         ),
       ),
@@ -250,6 +266,8 @@ String _getTitle(String? routeName) {
       return 'Factures';
     case 'clients':
       return 'Clients';
+    case 'fournisseurs':
+      return 'Fournisseurs';
     default:
       return 'E.A.S Sarlu';
   }

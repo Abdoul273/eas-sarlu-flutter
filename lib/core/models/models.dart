@@ -188,6 +188,9 @@ class MouvementStock {
   final String date; // ISO 8601
   final String utilisateur;
   final String note;
+  final String? fournisseurId;
+  final String? fournisseurNom;
+  final String? fournisseurQuartier;
   final int? rev;
   final String? updatedAt;
   final String? updatedBy;
@@ -202,6 +205,9 @@ class MouvementStock {
     required this.date,
     this.utilisateur = '',
     this.note = '',
+    this.fournisseurId,
+    this.fournisseurNom,
+    this.fournisseurQuartier,
     this.rev,
     this.updatedAt,
     this.updatedBy,
@@ -218,6 +224,9 @@ class MouvementStock {
       date: json['date'] as String? ?? '',
       utilisateur: json['utilisateur'] as String? ?? '',
       note: json['note'] as String? ?? '',
+      fournisseurId: json['fournisseurId'] as String?,
+      fournisseurNom: json['fournisseurNom'] as String?,
+      fournisseurQuartier: json['fournisseurQuartier'] as String?,
       rev: json['_rev'] as int?,
       updatedAt: json['_updatedAt'] as String?,
       updatedBy: json['_updatedBy'] as String?,
@@ -235,6 +244,9 @@ class MouvementStock {
       'date': date,
       'utilisateur': utilisateur,
       'note': note,
+      if (fournisseurId != null) 'fournisseurId': fournisseurId,
+      if (fournisseurNom != null) 'fournisseurNom': fournisseurNom,
+      if (fournisseurQuartier != null) 'fournisseurQuartier': fournisseurQuartier,
       if (rev != null) '_rev': rev,
       if (updatedAt != null) '_updatedAt': updatedAt,
       if (updatedBy != null) '_updatedBy': updatedBy,
@@ -691,6 +703,94 @@ class Client {
       type: type ?? this.type,
       email: email ?? this.email,
       telephone: telephone ?? this.telephone,
+      adresse: adresse ?? this.adresse,
+      quartier: quartier ?? this.quartier,
+      ville: ville ?? this.ville,
+      creeLe: creeLe ?? this.creeLe,
+      rev: rev ?? this.rev,
+      updatedAt: updatedAt ?? this.updatedAt,
+      updatedBy: updatedBy ?? this.updatedBy,
+    );
+  }
+}
+
+class Fournisseur {
+  final String id;
+  final String nom;
+  final String telephone;
+  final String email;
+  final String adresse;
+  final String quartier;
+  final String ville;
+  final String creeLe;
+  final int? rev;
+  final String? updatedAt;
+  final String? updatedBy;
+
+  Fournisseur({
+    required this.id,
+    required this.nom,
+    this.telephone = '',
+    this.email = '',
+    this.adresse = '',
+    this.quartier = '',
+    this.ville = '',
+    this.creeLe = '',
+    this.rev,
+    this.updatedAt,
+    this.updatedBy,
+  });
+
+  factory Fournisseur.fromJson(Map<String, dynamic> json) {
+    return Fournisseur(
+      id: json['id'] as String? ?? '',
+      nom: json['nom'] as String? ?? '',
+      telephone: json['telephone'] as String? ?? '',
+      email: json['email'] as String? ?? '',
+      adresse: json['adresse'] as String? ?? '',
+      quartier: json['quartier'] as String? ?? '',
+      ville: json['ville'] as String? ?? '',
+      creeLe: json['creeLe'] as String? ?? '',
+      rev: json['_rev'] as int?,
+      updatedAt: json['_updatedAt'] as String?,
+      updatedBy: json['_updatedBy'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() {
+    return {
+      'id': id,
+      'nom': nom,
+      'telephone': telephone,
+      'email': email,
+      'adresse': adresse,
+      'quartier': quartier,
+      'ville': ville,
+      'creeLe': creeLe,
+      if (rev != null) '_rev': rev,
+      if (updatedAt != null) '_updatedAt': updatedAt,
+      if (updatedBy != null) '_updatedBy': updatedBy,
+    };
+  }
+
+  Fournisseur copyWith({
+    String? id,
+    String? nom,
+    String? telephone,
+    String? email,
+    String? adresse,
+    String? quartier,
+    String? ville,
+    String? creeLe,
+    int? rev,
+    String? updatedAt,
+    String? updatedBy,
+  }) {
+    return Fournisseur(
+      id: id ?? this.id,
+      nom: nom ?? this.nom,
+      telephone: telephone ?? this.telephone,
+      email: email ?? this.email,
       adresse: adresse ?? this.adresse,
       quartier: quartier ?? this.quartier,
       ville: ville ?? this.ville,

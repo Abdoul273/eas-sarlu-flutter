@@ -408,10 +408,23 @@ class SyncEngine {
             id, resultat['erreur']?.toString() ?? 'Erreur inconnue');
         return false;
 
+      case 'inconnu':
+        // Le serveur ne connaît pas ce type d'opération : c'est qu'il n'a pas
+        // encore été déployé avec la fonctionnalité qui l'émet. Le réessayer
+        // n'y changera rien tant que le déploiement n'a pas eu lieu — mais il
+        // n'y a rien de perdu non plus : l'opération reste dans la file, et le
+        // bouton « Reprendre » du panneau de synchronisation la relancera.
+        //
+        // Le message dit CE QU'IL FAUT FAIRE. Un « refusée par le serveur
+        // (inconnu) » laissait le gérant devant un voyant rouge permanent, sans
+        // la moindre indication sur la marche à suivre.
+        await _opQueue.bloquer(
+            id,
+            'Le serveur ne connaît pas encore « ${_libelleParDefaut(type)} ». '
+            'Mettez le serveur à jour, puis touchez « Reprendre ».');
+        return false;
+
       default:
-        // « inconnu » : le serveur ne sait pas traiter ce type d'opération.
-        // Inutile de la lui renvoyer à chaque cycle — elle part directement en
-        // opération bloquée, visible par l'utilisateur.
         await _opQueue.markFailed(
             id, 'Opération refusée par le serveur ($statut)');
         return false;
@@ -430,6 +443,8 @@ class SyncEngine {
         'vente_modification' => 'Modification de vente',
         'client' => 'Client',
         'article' => 'Article',
+        'fournisseur' => 'Fournisseur',
+        'fournisseur_delete' => 'Suppression de fournisseur',
         'mouvement' => 'Mouvement de stock',
         'facture_paiement' => 'Versement sur facture',
         'depense' => 'Dépense',
@@ -481,6 +496,16 @@ class SyncEngine {
         if (record != null) {
           await _stores.upsert('article', Article.fromJson(record));
         }
+
+      case 'fournisseur':
+        final record = r['record'];
+        if (record != null) {
+          await _stores.upsert('fournisseur', Fournisseur.fromJson(record));
+        }
+
+      case 'fournisseur_delete':
+        // Rien à réintégrer : la suppression locale a déjà eu lieu.
+        break;
 
       case 'mouvement':
         // Réponse : { mouvement, article }. Le stock du serveur fait foi.
@@ -545,6 +570,12 @@ class SyncEngine {
       'client': _parser(donnees['clients'], Client.fromJson),
       'depense': _parser(donnees['depenses'], Depense.fromJson),
       'mouvement': _parser(donnees['mouvements'], MouvementStock.fromJson),
+      // Absente de l'instantané, la clé n'est PAS traitée comme une liste vide :
+      // `appliquerInstantane` supprime tout ce que le serveur ne renvoie plus,
+      // et un serveur pas encore déployé effacerait alors les fournisseurs
+      // saisis sur le téléphone à chaque synchronisation.
+      if (donnees['fournisseurs'] != null)
+        'fournisseur': _parser(donnees['fournisseurs'], Fournisseur.fromJson),
       // Le serveur nomme cette clé « utilisateurs » (et non « users »).
       if (donnees['utilisateurs'] != null)
         'user': _parser(donnees['utilisateurs'], Utilisateur.fromJson),
@@ -705,6 +736,14 @@ class SyncEngine {
         final record = Article.fromJson(payload['record']);
         final serveur = await _stores.getArticle(record.id);
         await _stores.upsert('article', record.copyWith(rev: serveur?.rev));
+
+      case 'fournisseur':
+        final record = Fournisseur.fromJson(payload['record']);
+        final serveur = await _stores.getFournisseur(record.id);
+        await _stores.upsert('fournisseur', record.copyWith(rev: serveur?.rev));
+
+      case 'fournisseur_delete':
+        await _stores.supprimer('fournisseur', payload['id'] as String);
 
       case 'mouvement':
         await _stores.upsert(

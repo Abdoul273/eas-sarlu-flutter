@@ -83,6 +83,13 @@ const List<GroupePanneau> kGroupesPanneau = [
         routePath: '/clients',
         description: 'Répertoire des acheteurs',
       ),
+      EntreePanneau(
+        icone: Icons.handshake_rounded,
+        libelle: 'Fournisseurs',
+        routeName: 'fournisseurs',
+        routePath: '/fournisseurs',
+        description: 'Répertoire des fournisseurs',
+      ),
     ],
   ),
   GroupePanneau(

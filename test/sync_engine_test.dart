@@ -431,17 +431,80 @@ void main() {
     expect(restantes.first.dernierErreur, 'Dépense incomplète');
   });
 
-  test('un statut inconnu ne boucle pas indéfiniment', () async {
+  test('un type que le serveur ignore s\'arrête tout de suite, et dit quoi faire',
+      () async {
+    // Sept réessais de plus n'apprendront pas au serveur un type qu'il ne
+    // connaît pas : il faut le déployer. L'opération s'arrête donc dès le
+    // premier refus — mais elle RESTE dans la file, et le message dit la marche
+    // à suivre plutôt que d'afficher un voyant rouge sans explication.
     final engine = creerMoteur();
-    final opId = await opQueue.enqueue('type_bidon', {'record': {}});
+    final opId = await opQueue.enqueue('fournisseur', {'record': {}});
 
     final ops = await opQueue.getPendingOperations();
     await engine.debugTraiterResultat(
-        ops, {'id': opId, 'type': 'type_bidon', 'statut': 'inconnu'});
+        ops, {'id': opId, 'type': 'fournisseur', 'statut': 'inconnu'});
 
     final restantes = await opQueue.getAllOperations();
-    expect(restantes.first.tentatives, 1);
-    expect(restantes.first.dernierErreur, contains('refusée'));
+    expect(restantes, hasLength(1), reason: 'rien ne doit être jeté');
+    expect(restantes.first.bloquee, isTrue);
+    expect(restantes.first.dernierErreur, contains('Fournisseur'));
+    expect(restantes.first.dernierErreur, contains('Reprendre'));
+
+    // Et « Reprendre » la remet effectivement en circulation.
+    await opQueue.reprendre(opId);
+    expect(await opQueue.getPendingOperations(), hasLength(1));
+  });
+
+  test('un fournisseur appliqué récupère le _rev du serveur', () async {
+    final engine = creerMoteur();
+    final opId = await opQueue.enqueue('fournisseur', {
+      'record': {'id': 'fo1', 'nom': 'Import Turquie'},
+    });
+
+    final ops = await opQueue.getPendingOperations();
+    await engine.debugTraiterResultat(ops, {
+      'id': opId,
+      'type': 'fournisseur',
+      'statut': 'applique',
+      'result': {
+        'record': {'id': 'fo1', 'nom': 'Import Turquie SARL', '_rev': 3},
+      },
+    });
+
+    final f = await stores.getFournisseur('fo1');
+    expect(f?.nom, 'Import Turquie SARL');
+    expect(f?.rev, 3);
+    expect(await opQueue.getAllOperations(), isEmpty);
+  });
+
+  test('l\'instantané rapatrie les fournisseurs du serveur', () async {
+    final engine = creerMoteur();
+    await engine.debugAppliquerInstantane({
+      'articles': [], 'ventes': [], 'factures': [], 'clients': [],
+      'depenses': [], 'mouvements': [],
+      'fournisseurs': [
+        {'id': 'fo1', 'nom': 'Import Turquie', 'ville': 'Conakry', '_rev': 1},
+      ],
+    });
+
+    expect((await stores.getFournisseur('fo1'))?.nom, 'Import Turquie');
+  });
+
+  test('un serveur sans fournisseurs n\'efface pas ceux du téléphone', () async {
+    // `appliquerInstantane` supprime tout ce que le serveur ne renvoie plus.
+    // Si la clé est absente — serveur pas encore déployé —, la traiter comme
+    // une liste vide effacerait à chaque cycle les fournisseurs saisis au
+    // comptoir. Une clé absente n'est pas une liste vide.
+    final engine = creerMoteur();
+    await stores.upsert('fournisseur',
+        Fournisseur(id: 'fo1', nom: 'Import Turquie', creeLe: '2026-08-01'));
+
+    await engine.debugAppliquerInstantane({
+      'articles': [], 'ventes': [], 'factures': [], 'clients': [],
+      'depenses': [], 'mouvements': [],
+    });
+
+    expect(await stores.getFournisseur('fo1'), isNotNull);
   });
 
   test('le pull charge les utilisateurs depuis la clé « utilisateurs »',

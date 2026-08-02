@@ -153,8 +153,8 @@ class ArticleDetailPage extends ConsumerWidget {
                       Expanded(
                         child: _buildActionButton(
                           context: context,
-                          label: 'Entrée',
-                          icon: Icons.add_circle_rounded,
+                          label: 'Achat Fournisseur',
+                          icon: Icons.add_business_rounded,
                           color: metier.succes,
                           onPressed: () =>
                               _mouvement(context, 'entrée', article),
@@ -164,22 +164,11 @@ class ArticleDetailPage extends ConsumerWidget {
                       Expanded(
                         child: _buildActionButton(
                           context: context,
-                          label: 'Sortie',
-                          icon: Icons.remove_circle_rounded,
-                          color: metier.danger,
-                          onPressed: () =>
-                              _mouvement(context, 'sortie', article),
-                        ),
-                      ),
-                      const SizedBox(width: Espace.xs + 2),
-                      Expanded(
-                        child: _buildActionButton(
-                          context: context,
-                          label: 'Ajuster',
-                          icon: Icons.tune_rounded,
+                          label: 'Vente',
+                          icon: Icons.sell_rounded,
                           color: scheme.primary,
-                          onPressed: () =>
-                              _mouvement(context, 'ajustement', article),
+                          onPressed: () => context.pushNamed('nouvelle-vente',
+                              queryParameters: {'articleId': article.id}),
                         ),
                       ),
                     ],
@@ -918,6 +907,41 @@ class ArticleDetailPage extends ConsumerWidget {
                   ),
                 ],
 
+
+                // Fournisseur et Quartier
+                if (m.fournisseurNom != null && m.fournisseurNom!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Row(
+                    children: [
+                      Icon(Icons.business_rounded,
+                          size: 13, color: scheme.primary),
+                      const SizedBox(width: 4),
+                      Text(
+                        m.fournisseurNom!,
+                        style: theme.textTheme.labelSmall?.copyWith(
+                          fontWeight: FontWeight.w600,
+                          color: scheme.onSurface,
+                        ),
+                      ),
+                      if (m.fournisseurQuartier != null && m.fournisseurQuartier!.isNotEmpty) ...[
+                        const SizedBox(width: Espace.sm),
+                        Icon(Icons.location_on_rounded,
+                            size: 13, color: metier.succes),
+                        const SizedBox(width: 4),
+                        Expanded(
+                          child: Text(
+                            m.fournisseurQuartier!,
+                            style: theme.textTheme.labelSmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ],
+
                 const SizedBox(height: 6),
 
                 // Auteur & Horodatage
@@ -1265,6 +1289,24 @@ class MouvementDetailSheet extends StatelessWidget {
                                 label: 'Référence SKU',
                                 valeur: article.ref,
                                 couleurIcone: scheme.primary,
+                              ),
+                            ],
+                            if (mouvement.fournisseurNom != null && mouvement.fournisseurNom!.isNotEmpty) ...[
+                              const Divider(height: 16),
+                              _MouvementInfoLine(
+                                icone: Icons.business_rounded,
+                                label: 'Fournisseur',
+                                valeur: mouvement.fournisseurNom!,
+                                couleurIcone: metier.info,
+                              ),
+                            ],
+                            if (mouvement.fournisseurQuartier != null && mouvement.fournisseurQuartier!.isNotEmpty) ...[
+                              const Divider(height: 16),
+                              _MouvementInfoLine(
+                                icone: Icons.location_on_rounded,
+                                label: 'Lieu / Quartier d\'enlèvement',
+                                valeur: mouvement.fournisseurQuartier!,
+                                couleurIcone: metier.succes,
                               ),
                             ],
                             if (mouvement.quantiteAvant != null &&

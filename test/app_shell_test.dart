@@ -225,6 +225,14 @@ void main() {
       await tester.tap(find.byTooltip('Ouvrir le menu'));
       await tester.pumpAndSettle();
 
+      // Le panneau défile : avec l'ajout des fournisseurs, « Finances » ne
+      // tient plus dans la hauteur d'un téléphone et n'est même pas construit
+      // tant qu'on n'a pas fait défiler. C'est le geste qu'accomplit
+      // l'utilisateur, et le test doit l'accomplir aussi.
+      await tester.scrollUntilVisible(find.text('Finances'), 200,
+          scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
+
       await tester.tap(find.text('Finances'));
       await tester.pumpAndSettle();
 

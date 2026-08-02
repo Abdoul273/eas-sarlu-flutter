@@ -10,6 +10,7 @@ import '../core/auth/auth_state.dart';
 import '../core/sync/sync_state.dart';
 import '../app/theme.dart';
 import '../features/clients/client_form_sheet.dart';
+import '../features/fournisseurs/fournisseur_form_sheet.dart';
 import 'nav_panel.dart';
 import 'sync_badge.dart';
 import 'notification_badge.dart';
@@ -228,6 +229,47 @@ class AppShell extends ConsumerWidget {
               backgroundColor: Colors.transparent,
               elevation: 0,
               builder: (_) => const ClientFormSheet(),
+            );
+          },
+          child:
+              const Icon(Icons.person_add_alt_1_rounded, color: Colors.white),
+        ),
+      );
+    }
+    if (location.startsWith('/fournisseurs')) {
+      return Container(
+        margin: marginBas,
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(Rayon.lg),
+          gradient: LinearGradient(
+            colors: [
+              scheme.primary,
+              Color.lerp(scheme.primary, Colors.orangeAccent, 0.3)!
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: scheme.primary.withValues(alpha: 0.35),
+              blurRadius: 16,
+              offset: const Offset(0, 6),
+            ),
+          ],
+        ),
+        child: FloatingActionButton(
+          heroTag: 'fab-nouveau-fournisseur',
+          tooltip: 'Nouveau fournisseur',
+          backgroundColor: Colors.transparent,
+          elevation: 0,
+          highlightElevation: 0,
+          onPressed: () {
+            showModalBottomSheet(
+              context: context,
+              useRootNavigator: true,
+              isScrollControlled: true,
+              showDragHandle: false,
+              backgroundColor: Colors.transparent,
+              elevation: 0,
+              builder: (_) => const FournisseurFormSheet(),
             );
           },
           child:

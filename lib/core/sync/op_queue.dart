@@ -133,6 +133,22 @@ class OpQueue {
     );
   }
 
+  /// Arrête une opération tout de suite, sans user les tentatives.
+  ///
+  /// Pour les échecs qu'aucune répétition ne résoudra : un serveur qui ne
+  /// connaît pas le type d'opération le connaîtra encore moins au huitième
+  /// essai. Rien n'est perdu — l'opération reste dans la file et `reprendre`
+  /// la relance.
+  Future<void> bloquer(String id, String raison) async {
+    await (_db.update(_db.opQueue)..where((o) => o.id.equals(id))).write(
+      OpQueueCompanion(
+        dernierErreur: Value(raison),
+        bloquee: const Value(true),
+        prochainEssai: const Value(null),
+      ),
+    );
+  }
+
   /// Remet une opération bloquée en circulation, à la demande de l'utilisateur.
   Future<void> reprendre(String id) async {
     await (_db.update(_db.opQueue)..where((o) => o.id.equals(id))).write(

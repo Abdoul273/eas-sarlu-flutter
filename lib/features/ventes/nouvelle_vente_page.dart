@@ -319,32 +319,54 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
   void _creerClientRapide() {
     final nomCtrl = TextEditingController();
     final telCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final quartierCtrl = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(Rayon.xl)),
         title: const Text('Nouveau Client Rapide'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: nomCtrl,
-              textCapitalization: TextCapitalization.words,
-              decoration: const InputDecoration(
-                labelText: 'Nom du client *',
-                prefixIcon: Icon(Icons.person_outline_rounded),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nomCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Nom du client *',
+                  prefixIcon: Icon(Icons.person_outline_rounded),
+                ),
               ),
-            ),
-            const SizedBox(height: Espace.md),
-            TextField(
-              controller: telCtrl,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                labelText: 'Téléphone',
-                prefixIcon: Icon(Icons.phone_outlined),
+              const SizedBox(height: Espace.md),
+              TextField(
+                controller: telCtrl,
+                keyboardType: TextInputType.phone,
+                decoration: const InputDecoration(
+                  labelText: 'Téléphone',
+                  prefixIcon: Icon(Icons.phone_outlined),
+                ),
               ),
-            ),
-          ],
+              const SizedBox(height: Espace.md),
+              TextField(
+                controller: emailCtrl,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(
+                  labelText: 'Email',
+                  prefixIcon: Icon(Icons.email_outlined),
+                ),
+              ),
+              const SizedBox(height: Espace.md),
+              TextField(
+                controller: quartierCtrl,
+                textCapitalization: TextCapitalization.words,
+                decoration: const InputDecoration(
+                  labelText: 'Quartier',
+                  prefixIcon: Icon(Icons.map_outlined),
+                ),
+              ),
+            ],
+          ),
         ),
         actions: [
           TextButton(
@@ -360,6 +382,8 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
                 id: _uuid.v4(),
                 nom: nomCtrl.text.trim(),
                 telephone: telCtrl.text.trim(),
+                email: emailCtrl.text.trim(),
+                quartier: quartierCtrl.text.trim(),
                 creeLe: DateTime.now().toIso8601String(),
               );
               final stores = ref.read(storesProvider);

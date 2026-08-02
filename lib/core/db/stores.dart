@@ -197,6 +197,9 @@ class Stores {
   Future<Client?> getClient(String id) =>
       _getOne('client', id, Client.fromJson);
 
+  Future<Fournisseur?> getFournisseur(String id) =>
+      _getOne('fournisseur', id, Fournisseur.fromJson);
+
   Future<Vente?> getVente(String id) => _getOne('vente', id, Vente.fromJson);
 
   Future<Facture?> getFacture(String id) =>
@@ -240,6 +243,10 @@ class Stores {
 
   /// Clients triés par nom.
   Future<List<Client>> getClients() => _getAll('client', Client.fromJson,
+      compare: (a, b) => a.nom.toLowerCase().compareTo(b.nom.toLowerCase()));
+
+  /// Fournisseurs triés par nom.
+  Future<List<Fournisseur>> getFournisseurs() => _getAll('fournisseur', Fournisseur.fromJson,
       compare: (a, b) => a.nom.toLowerCase().compareTo(b.nom.toLowerCase()));
 
   /// Ventes, les plus récentes en premier.
@@ -288,6 +295,21 @@ class Stores {
           Client.fromJson,
           compare: (a, b) => a.nom.toLowerCase().compareTo(b.nom.toLowerCase()),
         ));
+  }
+
+  /// Fournisseurs triés par nom.
+  Stream<List<Fournisseur>> watchFournisseurs() {
+    return _selectKind('fournisseur').watch().map((rows) => _mapRows(
+          rows,
+          Fournisseur.fromJson,
+          compare: (a, b) => a.nom.toLowerCase().compareTo(b.nom.toLowerCase()),
+        ));
+  }
+  
+  Stream<Fournisseur?> watchFournisseur(String id) {
+    return _selectOne('fournisseur', id)
+        .watchSingleOrNull()
+        .map((row) => row == null ? null : Fournisseur.fromJson(_decode(row)));
   }
 
   /// Ventes, les plus récentes en premier.
