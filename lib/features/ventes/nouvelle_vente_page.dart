@@ -505,40 +505,43 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
                         message: 'Aucun article trouvé',
                         compact: true,
                       )
-                    : ListView.separated(
-                        padding: const EdgeInsets.all(Espace.xs),
-                        itemCount: articlesFiltres.length,
-                        separatorBuilder: (_, __) => const Divider(height: 1),
-                        itemBuilder: (ctx, index) {
-                          final a = articlesFiltres[index];
-                          final dispo = stockDisponible(a);
-                          final aEnStock = dispo > 0;
+                    : Material(
+                        color: Colors.transparent,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.all(Espace.xs),
+                          itemCount: articlesFiltres.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (ctx, index) {
+                            final a = articlesFiltres[index];
+                            final dispo = stockDisponible(a);
+                            final aEnStock = dispo > 0;
 
-                          return ListTile(
-                            title: Text(
-                              a.nom,
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: aEnStock ? scheme.onSurface : scheme.onSurfaceVariant,
+                            return ListTile(
+                              title: Text(
+                                a.nom,
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: aEnStock ? scheme.onSurface : scheme.onSurfaceVariant,
+                                ),
                               ),
-                            ),
-                            subtitle: Text(
-                              '${fmtGNF(a.prixVente)} / ${a.unite} • ${aEnStock ? '$dispo ${a.unite} dispo.' : 'Rupture'}',
-                              style: TextStyle(
-                                color: aEnStock ? scheme.onSurfaceVariant : scheme.error,
+                              subtitle: Text(
+                                '${fmtGNF(a.prixVente)} / ${a.unite} • ${aEnStock ? '$dispo ${a.unite} dispo.' : 'Rupture'}',
+                                style: TextStyle(
+                                  color: aEnStock ? scheme.onSurfaceVariant : scheme.error,
+                                ),
                               ),
-                            ),
-                            trailing: IconButton(
-                              icon: Icon(
-                                Icons.add_circle_rounded,
-                                color: aEnStock ? scheme.primary : scheme.outlineVariant,
-                                size: 28,
+                              trailing: IconButton(
+                                icon: Icon(
+                                  Icons.add_circle_rounded,
+                                  color: aEnStock ? scheme.primary : scheme.outlineVariant,
+                                  size: 28,
+                                ),
+                                onPressed: aEnStock ? () => _ajouterAuPanier(a) : null,
                               ),
-                              onPressed: aEnStock ? () => _ajouterAuPanier(a) : null,
-                            ),
-                            onTap: aEnStock ? () => _ajouterAuPanier(a) : null,
-                          );
-                        },
+                              onTap: aEnStock ? () => _ajouterAuPanier(a) : null,
+                            );
+                          },
+                        ),
                       ),
               ),
             )
@@ -694,22 +697,25 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
                   borderRadius: BorderRadius.circular(Rayon.md),
                   border: Border.all(color: scheme.outlineVariant),
                 ),
-                child: ListView(
-                  shrinkWrap: true,
-                  children: [
-                    ...clientsFiltres.map((c) => ListTile(
-                          dense: true,
-                          title: Text(c.nom, style: const TextStyle(fontWeight: FontWeight.bold)),
-                          subtitle: Text(c.telephone),
-                          onTap: () => _choisirClient(c),
-                        )),
-                    ListTile(
-                      dense: true,
-                      leading: const Icon(Icons.person_outline_rounded, size: 18),
-                      title: const Text('Garder "Client de passage"'),
-                      onTap: () => _choisirClient(null),
-                    ),
-                  ],
+                child: Material(
+                  color: Colors.transparent,
+                  child: ListView(
+                    shrinkWrap: true,
+                    children: [
+                      ...clientsFiltres.map((c) => ListTile(
+                            dense: true,
+                            title: Text(c.nom, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            subtitle: Text(c.telephone),
+                            onTap: () => _choisirClient(c),
+                          )),
+                      ListTile(
+                        dense: true,
+                        leading: const Icon(Icons.person_outline_rounded, size: 18),
+                        title: const Text('Garder "Client de passage"'),
+                        onTap: () => _choisirClient(null),
+                      ),
+                    ],
+                  ),
                 ),
               ),
           ],

@@ -735,7 +735,19 @@ class SyncEngine {
       case 'article':
         final record = Article.fromJson(payload['record']);
         final serveur = await _stores.getArticle(record.id);
-        await _stores.upsert('article', record.copyWith(rev: serveur?.rev));
+        // Le STOCK n'appartient pas à la fiche : il est tenu par les mouvements
+        // et les ventes. Rejouer une écriture d'article avec la quantité
+        // qu'elle transportait ramenait le stock à ce qu'il était au moment de
+        // la saisie — un article créé avec cinquante barres retombait à zéro au
+        // premier instantané, et corriger un prix effaçait les ventes de
+        // l'heure écoulée. On garde donc celui qui est en place.
+        await _stores.upsert(
+          'article',
+          record.copyWith(
+            rev: serveur?.rev,
+            stock: serveur?.stock ?? record.stock,
+          ),
+        );
 
       case 'fournisseur':
         final record = Fournisseur.fromJson(payload['record']);

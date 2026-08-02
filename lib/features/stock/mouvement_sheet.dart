@@ -199,30 +199,33 @@ class _MouvementSheetState extends ConsumerState<MouvementSheet> {
                 ),
               ),
               Expanded(
-                child: ListView.separated(
-                  itemCount: fournisseurs.length,
-                  separatorBuilder: (_, __) => const Divider(height: 1),
-                  itemBuilder: (context, index) {
-                    final f = fournisseurs[index];
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
-                        child: Text(
-                          f.nom.substring(0, 1).toUpperCase(),
-                          style: TextStyle(
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.bold,
+                child: Material(
+                  color: Colors.transparent,
+                  child: ListView.separated(
+                    itemCount: fournisseurs.length,
+                    separatorBuilder: (_, __) => const Divider(height: 1),
+                    itemBuilder: (context, index) {
+                      final f = fournisseurs[index];
+                      return ListTile(
+                        leading: CircleAvatar(
+                          backgroundColor: Theme.of(context).colorScheme.primary.withValues(alpha: 0.1),
+                          child: Text(
+                            f.nom.substring(0, 1).toUpperCase(),
+                            style: TextStyle(
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.bold,
+                            ),
                           ),
                         ),
-                      ),
-                      title: Text(f.nom, style: const TextStyle(fontWeight: FontWeight.w600)),
-                      subtitle: f.telephone.isNotEmpty ? Text(f.telephone) : null,
-                      onTap: () {
-                        setState(() => _fournisseurChoisi = f);
-                        Navigator.pop(context);
-                      },
-                    );
-                  },
+                        title: Text(f.nom, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        subtitle: f.telephone.isNotEmpty ? Text(f.telephone) : null,
+                        onTap: () {
+                          setState(() => _fournisseurChoisi = f);
+                          Navigator.pop(context);
+                        },
+                      );
+                    },
+                  ),
                 ),
               ),
             ],

@@ -154,7 +154,7 @@ class ArticleDetailPage extends ConsumerWidget {
                       Expanded(
                         child: _buildActionButton(
                           context: context,
-                          label: 'Achat Fournisseur',
+                          label: 'Achat',
                           icon: Icons.add_business_rounded,
                           color: metier.succes,
                           onPressed: () =>

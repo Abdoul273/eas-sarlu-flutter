@@ -4,12 +4,16 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:uuid/uuid.dart';
 import '../../app/format.dart';
 import '../../app/ui_kit.dart';
 import '../../app/theme.dart';
 import '../../core/models/models.dart';
 import '../../core/db/stores.dart';
 import '../../core/sync/op_queue.dart';
+import '../dashboard/dashboard_page.dart'
+    show tousArticlesProvider, utilisateurActuelProvider;
+import '../fournisseurs/selecteur_fournisseur.dart';
 
 class ArticleFormPage extends ConsumerStatefulWidget {
   const ArticleFormPage({super.key});
@@ -17,6 +21,19 @@ class ArticleFormPage extends ConsumerStatefulWidget {
   @override
   ConsumerState<ArticleFormPage> createState() => _ArticleFormPageState();
 }
+
+/// D'où vient le stock qu'on déclare en créant un article.
+///
+/// Deux cas, et deux seulement, qui n'entraînent pas les mêmes écritures :
+///
+///   — [dejaEnMagasin] : la marchandise était là avant que l'application ne
+///     l'enregistre. Elle a déjà été payée, il y a des mois peut-être. Aucune
+///     dette fournisseur ne doit en naître, et l'attribuer à quelqu'un
+///     inventerait un historique d'achat.
+///   — [livraisonFournisseur] : elle vient d'arriver, de chez quelqu'un
+///     d'identifié. Elle entre dans l'historique de ce fournisseur, et le
+///     magasin lui doit peut-être encore de l'argent.
+enum OrigineStock { dejaEnMagasin, livraisonFournisseur }
 
 class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
   final _formKey = GlobalKey<FormState>();
@@ -37,6 +54,21 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
   String? _editId;
   bool _isLoading = false;
 
+  /// D'où vient le stock initial saisi à la création.
+  ///
+  /// La question n'est pas cosmétique : elle décide de ce qui sera écrit au
+  /// journal des mouvements. Jusqu'ici le stock initial était posé directement
+  /// dans la fiche, sans aucune trace — l'historique de l'article restait vide
+  /// alors qu'il y avait cinquante barres en dépôt, et personne ne pouvait plus
+  /// dire d'où elles venaient.
+  OrigineStock _origineStock = OrigineStock.dejaEnMagasin;
+  Fournisseur? _fournisseurLivraison;
+
+  /// Quantité initiale saisie, relue à chaque frappe pour n'afficher la
+  /// question de l'origine que lorsqu'elle se pose.
+  int _stockInitial = 0;
+  final List<String> _customCategories = [];
+
   static const List<String> categories = [
     'Tube carré',
     'Tube rond',
@@ -51,6 +83,21 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
     'Tôle galvanisée',
     'Tôle ondulée'
   ];
+
+  List<String> get _categoriesDisponibles {
+    final articles = ref.watch(tousArticlesProvider).valueOrNull ?? [];
+    final catsDuStock = articles
+        .map((a) => a.categorie.trim())
+        .where((c) => c.isNotEmpty);
+    final allSet = <String>{
+      ...categories,
+      ...catsDuStock,
+      ..._customCategories,
+      if (_categorie.trim().isNotEmpty) _categorie.trim(),
+    };
+    return allSet.toList()
+      ..sort((a, b) => a.toLowerCase().compareTo(b.toLowerCase()));
+  }
   static const List<String> unites = ['Barre', 'Plaque', 'Feuille'];
   static const List<String> provenances = [
     'Turquie',
@@ -69,6 +116,10 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
     _prixAchatCtrl = TextEditingController();
     _prixVenteCtrl = TextEditingController();
     _stockCtrl = TextEditingController(text: '0');
+    _stockCtrl.addListener(() {
+      final v = parseMontantClean(_stockCtrl.text);
+      if (v != _stockInitial) setState(() => _stockInitial = v);
+    });
     _stockMinCtrl = TextEditingController(text: '0');
     _fournisseurCtrl = TextEditingController();
     _longueurCtrl = TextEditingController();
@@ -91,8 +142,8 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
         _nomCtrl.text = article.nom;
         _refCtrl.text = article.ref;
         _descCtrl.text = article.description;
-        _categorie = article.categorie.isNotEmpty && categories.contains(article.categorie)
-            ? article.categorie
+        _categorie = article.categorie.trim().isNotEmpty
+            ? article.categorie.trim()
             : categories.first;
         _unite = article.unite.isNotEmpty && unites.contains(article.unite)
             ? article.unite
@@ -421,10 +472,104 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
     );
   }
 
+  /// Inscrit le stock de départ au journal des mouvements.
+  ///
+  /// C'est ce qui manquait : le stock initial était posé directement dans la
+  /// fiche, et l'historique de l'article restait vide alors qu'il y avait
+  /// cinquante barres en dépôt. Plus personne ne pouvait dire d'où elles
+  /// venaient, ni depuis quand elles étaient là.
+  ///
+  /// Le type du mouvement dit l'origine, et il n'est pas décoratif :
+  ///
+  ///   — « ajustement » pour une reprise d'inventaire. Le serveur l'applique en
+  ///     ABSOLU : la quantité saisie devient le stock, quoi qu'il y ait eu
+  ///     avant. C'est exactement le sens d'un solde d'ouverture, et cela rend
+  ///     l'opération rejouable sans risque.
+  ///   — « entrée » pour une livraison. Le serveur l'applique en ÉCART : elle
+  ///     s'ajoute au stock, et elle entre dans l'historique du fournisseur.
+  ///
+  /// Aucune dépense n'est créée dans un cas comme dans l'autre. Le stock et
+  /// l'argent sont deux registres distincts dans toute l'application : une
+  /// livraison peut être payée d'avance, à trente jours, ou jamais. C'est dit à
+  /// l'écran plutôt que deviné ici.
+  Future<void> _enregistrerStockOuverture({
+    required Stores stores,
+    required OpQueue opQueue,
+    required Article article,
+    required int quantite,
+  }) async {
+    final livraison = _origineStock == OrigineStock.livraisonFournisseur &&
+        _fournisseurLivraison != null;
+    final f = _fournisseurLivraison;
+
+    final mouvement = MouvementStock(
+      id: const Uuid().v4(),
+      articleId: article.id,
+      type: livraison ? 'entrée' : 'ajustement',
+      quantite: quantite,
+      quantiteAvant: 0,
+      quantiteApres: quantite,
+      date: DateTime.now().toIso8601String(),
+      utilisateur: ref.read(utilisateurActuelProvider)?.nom ?? 'Utilisateur',
+      note: livraison
+          ? 'Première livraison à la création de l\'article'
+          : 'Stock déjà en magasin à la création de l\'article',
+      // Le nom est recopié en plus de l'identifiant : un fournisseur renommé ou
+      // supprimé ne doit pas effacer la trace de ce qui a été pris chez lui.
+      fournisseurId: livraison ? f!.id : null,
+      fournisseurNom: livraison ? f!.nom : null,
+      fournisseurQuartier:
+          livraison && f!.quartier.isNotEmpty ? f.quartier : null,
+    );
+
+    await stores.upsert('mouvement', mouvement);
+    // Le stock local prend sa valeur d'ouverture tout de suite : l'application
+    // sert d'abord hors ligne, et un article créé avec cinquante barres qui en
+    // affiche zéro serait recréé.
+    await stores.upsert('article', article.copyWith(stock: quantite));
+    await opQueue.enqueue('mouvement', {'mouvement': mouvement.toJson()});
+  }
+
+  Future<void> _choisirFournisseurLivraison() async {
+    final choisi = await choisirFournisseur(context);
+    if (!mounted || choisi == null) return;
+    setState(() {
+      _fournisseurLivraison = choisi;
+      _origineStock = OrigineStock.livraisonFournisseur;
+      // Le fournisseur habituel de la fiche suit celui de la première
+      // livraison, s'il n'a pas été renseigné à la main : c'est ce que
+      // l'utilisateur veut dire dans quasiment tous les cas, et il reste
+      // modifiable juste en dessous.
+      if (_fournisseurCtrl.text.trim().isEmpty) {
+        _fournisseurCtrl.text = choisi.nom;
+      }
+    });
+  }
+
   Future<void> _enregistrer() async {
     if (!_formKey.currentState!.validate()) return;
 
+    final stockSaisi = parseMontantClean(_stockCtrl.text);
+
+    // Une livraison sans fournisseur nommé n'est pas une livraison : on refuse
+    // avant d'écrire, plutôt que d'enregistrer un mouvement orphelin qui ne
+    // remonterait dans l'historique d'aucun fournisseur.
+    if (_editId == null &&
+        stockSaisi > 0 &&
+        _origineStock == OrigineStock.livraisonFournisseur &&
+        _fournisseurLivraison == null) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: const Text('Indiquez chez quel fournisseur cette marchandise '
+            'a été prise, ou choisissez « Déjà en magasin ».'),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ));
+      return;
+    }
+
     setState(() => _isLoading = true);
+
+    final creation = _editId == null;
+    final existant = creation ? null : await ref.read(storesProvider).getArticle(_editId!);
 
     final article = Article(
       id: _editId ?? DateTime.now().millisecondsSinceEpoch.toString(),
@@ -435,7 +580,15 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
       unite: _unite,
       prixAchat: parseMontantClean(_prixAchatCtrl.text),
       prixVente: parseMontantClean(_prixVenteCtrl.text),
-      stock: parseMontantClean(_stockCtrl.text),
+      // À la CRÉATION, l'article naît à zéro : c'est le mouvement d'ouverture
+      // ci-dessous qui pose le stock, pour qu'il en reste une trace datée et
+      // attribuée. Écrire la quantité ici ET envoyer le mouvement la compterait
+      // deux fois — le serveur applique le mouvement par-dessus la fiche.
+      //
+      // En MODIFICATION, on reprend le stock enregistré sans y toucher : le
+      // champ est désactivé, et reprendre la valeur qu'avait le formulaire à son
+      // ouverture écraserait les ventes survenues pendant la saisie.
+      stock: creation ? 0 : (existant?.stock ?? 0),
       stockMin: parseMontantClean(_stockMinCtrl.text),
       fournisseur: _fournisseurCtrl.text.trim(),
       photo: _photoBase64 ?? '',
@@ -447,16 +600,27 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
     try {
       final stores = ref.read(storesProvider);
       final opQueue = ref.read(opQueueProvider);
-      final baseRev =
-          _editId != null ? (await stores.getArticle(_editId!))?.rev : null;
+      final baseRev = existant?.rev;
 
       await stores.upsert('article', article);
-
-      final payload = <String, dynamic>{
+      await opQueue.enqueue('article', {
         'record': article.toJson(),
         if (baseRev != null) 'baseRev': baseRev,
-      };
-      await opQueue.enqueue('article', payload);
+      });
+
+      // Le stock d'ouverture, s'il y en a un.
+      //
+      // Déposé APRÈS l'article, et jamais avant : le serveur refuse un
+      // mouvement sur un article qu'il ne connaît pas encore, et la file part
+      // dans l'ordre de dépôt.
+      if (creation && stockSaisi > 0) {
+        await _enregistrerStockOuverture(
+          stores: stores,
+          opQueue: opQueue,
+          article: article,
+          quantite: stockSaisi,
+        );
+      }
 
       if (!mounted) return;
       context.pop();
@@ -466,6 +630,73 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
           .showSnackBar(SnackBar(content: Text('Erreur: $e')));
     } finally {
       if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  Future<void> _afficherDialogNouvelleCategorie() async {
+    final ctrl = TextEditingController();
+    final nouvelleCat = await showDialog<String>(
+      context: context,
+      builder: (ctx) {
+        final scheme = Theme.of(ctx).colorScheme;
+        return AlertDialog(
+          title: Row(
+            children: [
+              Icon(Icons.category_rounded, color: scheme.primary),
+              const SizedBox(width: 8),
+              const Text('Nouvelle catégorie'),
+            ],
+          ),
+          content: TextField(
+            controller: ctrl,
+            autofocus: true,
+            textCapitalization: TextCapitalization.sentences,
+            decoration: const InputDecoration(
+              labelText: 'Nom de la catégorie',
+              hintText: 'Ex: Accessoires, Visserie, Peinture...',
+              prefixIcon: Icon(Icons.label_rounded),
+            ),
+            onSubmitted: (val) {
+              if (val.trim().isNotEmpty) {
+                Navigator.of(ctx).pop(val.trim());
+              }
+            },
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Annuler'),
+            ),
+            FilledButton.icon(
+              onPressed: () {
+                if (ctrl.text.trim().isNotEmpty) {
+                  Navigator.of(ctx).pop(ctrl.text.trim());
+                }
+              },
+              icon: const Icon(Icons.check_rounded),
+              label: const Text('Ajouter'),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (nouvelleCat != null && nouvelleCat.trim().isNotEmpty) {
+      final catClean = nouvelleCat.trim();
+      setState(() {
+        if (!_customCategories.contains(catClean)) {
+          _customCategories.add(catClean);
+        }
+        _categorie = catClean;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Catégorie "$catClean" ajoutée et sélectionnée'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      }
     }
   }
 
@@ -545,19 +776,68 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
                       ),
                     ),
                     const SizedBox(height: Espace.md),
-                    DropdownButtonFormField<String>(
-                      initialValue: _categorie,
-                      decoration: const InputDecoration(
-                        labelText: 'Catégorie de produit',
-                        prefixIcon: Icon(Icons.category_rounded),
-                      ),
-                      borderRadius: BorderRadius.circular(Rayon.md),
-                      items: categories
-                          .map((c) => DropdownMenuItem(value: c, child: Text(c)))
-                          .toList(),
-                      onChanged: (v) {
-                        if (v != null) setState(() => _categorie = v);
-                      },
+                    Row(
+                      children: [
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            key: ValueKey(_categorie),
+                            initialValue:
+                                _categoriesDisponibles.contains(_categorie)
+                                    ? _categorie
+                                    : null,
+                            isExpanded: true,
+                            decoration: const InputDecoration(
+                              labelText: 'Catégorie de produit *',
+                              prefixIcon: Icon(Icons.category_rounded),
+                            ),
+                            borderRadius: BorderRadius.circular(Rayon.md),
+                            items: [
+                              ..._categoriesDisponibles.map(
+                                (c) => DropdownMenuItem(
+                                  value: c,
+                                  child: Text(
+                                    c,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                              DropdownMenuItem<String>(
+                                value: '__NOUVELLE_CATEGORIE__',
+                                child: Row(
+                                  children: [
+                                    Icon(Icons.add_rounded,
+                                        size: 18, color: scheme.primary),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Text(
+                                        '+ Autre / Nouvelle catégorie...',
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          color: scheme.primary,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                            onChanged: (v) {
+                              if (v == '__NOUVELLE_CATEGORIE__') {
+                                _afficherDialogNouvelleCategorie();
+                              } else if (v != null) {
+                                setState(() => _categorie = v);
+                              }
+                            },
+                          ),
+                        ),
+                        const SizedBox(width: Espace.xs),
+                        IconButton.filledTonal(
+                          tooltip: 'Saisir une nouvelle catégorie',
+                          icon: const Icon(Icons.add_rounded),
+                          onPressed: _afficherDialogNouvelleCategorie,
+                        ),
+                      ],
                     ),
                     const SizedBox(height: Espace.md),
                     TextFormField(
@@ -668,9 +948,18 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
                       child: TextFormField(
                         controller: _stockCtrl,
                         keyboardType: TextInputType.number,
-                        decoration: const InputDecoration(
+                        // Le stock ne se modifie plus par ce formulaire une
+                        // fois l'article créé : il se corrige par un
+                        // ajustement d'inventaire, qui laisse une trace et un
+                        // motif. Le laisser modifiable ici écrasait en silence
+                        // les entrées et les ventes survenues entre-temps.
+                        enabled: _editId == null,
+                        decoration: InputDecoration(
                           labelText: 'Stock Initial',
-                          prefixIcon: Icon(Icons.inventory_rounded),
+                          helperText: _editId == null
+                              ? null
+                              : 'Se corrige par « Ajuster » sur la fiche',
+                          prefixIcon: const Icon(Icons.inventory_rounded),
                         ),
                       ),
                     ),
@@ -689,6 +978,25 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
                   ],
                 ),
               ),
+
+              // La question ne se pose qu'à la création, et seulement s'il y a
+              // effectivement de la marchandise à expliquer.
+              if (_editId == null && _stockInitial > 0) ...[
+                const SizedBox(height: Espace.md),
+                _CarteOrigineStock(
+                  quantite: _stockInitial,
+                  unite: _unite,
+                  origine: _origineStock,
+                  fournisseur: _fournisseurLivraison,
+                  onOrigine: (o) => setState(() {
+                    _origineStock = o;
+                    if (o == OrigineStock.dejaEnMagasin) {
+                      _fournisseurLivraison = null;
+                    }
+                  }),
+                  onChoisirFournisseur: _choisirFournisseurLivraison,
+                ),
+              ],
               const SizedBox(height: Espace.xl),
 
               // Section 4: Caractéristiques & Source
@@ -942,6 +1250,166 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
             ],
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// « D'où vient ce stock ? » — posée seulement à la création, et seulement s'il
+/// y a de la marchandise à expliquer.
+///
+/// La distinction n'est pas administrative. Une reprise d'inventaire est de la
+/// marchandise déjà payée, parfois depuis des mois : l'attribuer à un
+/// fournisseur inventerait un historique d'achat, et gonflerait ses statistiques
+/// de choses qu'il n'a jamais livrées. Une livraison, elle, appartient à
+/// quelqu'un — et le magasin lui doit peut-être encore de l'argent.
+class _CarteOrigineStock extends StatelessWidget {
+  const _CarteOrigineStock({
+    required this.quantite,
+    required this.unite,
+    required this.origine,
+    required this.fournisseur,
+    required this.onOrigine,
+    required this.onChoisirFournisseur,
+  });
+
+  final int quantite;
+  final String unite;
+  final OrigineStock origine;
+  final Fournisseur? fournisseur;
+  final ValueChanged<OrigineStock> onOrigine;
+  final VoidCallback onChoisirFournisseur;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final metier = context.metier;
+    final livraison = origine == OrigineStock.livraisonFournisseur;
+
+    return AppCard(
+      margin: EdgeInsets.zero,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.help_outline_rounded, size: 18, color: scheme.primary),
+              const SizedBox(width: Espace.xs + 2),
+              Expanded(
+                child: Text(
+                  "D'où viennent ces ${fmtNombre(quantite)} $unite ?",
+                  style: theme.textTheme.titleSmall
+                      ?.copyWith(fontWeight: FontWeight.bold),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: Espace.sm),
+
+          RadioGroup<OrigineStock>(
+            groupValue: origine,
+            onChanged: (v) => v == null ? null : onOrigine(v),
+            child: Column(
+              children: [
+                RadioListTile<OrigineStock>(
+                  value: OrigineStock.dejaEnMagasin,
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  title: const Text('Déjà en magasin'),
+                  subtitle: Text(
+                    'Marchandise présente avant, déjà payée. '
+                    'Enregistrée comme reprise d\'inventaire.',
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                ),
+                RadioListTile<OrigineStock>(
+                  value: OrigineStock.livraisonFournisseur,
+                  contentPadding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  title: const Text("Livraison d'un fournisseur"),
+                  subtitle: Text(
+                    "Entre dans l'historique du fournisseur.",
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          if (livraison) ...[
+            const SizedBox(height: Espace.xs),
+            InkWell(
+              onTap: onChoisirFournisseur,
+              borderRadius: BorderRadius.circular(Rayon.md),
+              child: Container(
+                padding: const EdgeInsets.all(Espace.md),
+                decoration: BoxDecoration(
+                  color: scheme.surfaceContainer,
+                  borderRadius: BorderRadius.circular(Rayon.md),
+                  border: Border.all(
+                    color: fournisseur == null
+                        ? metier.alerte.withValues(alpha: 0.6)
+                        : scheme.outlineVariant,
+                  ),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      fournisseur == null
+                          ? Icons.error_outline_rounded
+                          : Icons.handshake_rounded,
+                      color: fournisseur == null ? metier.alerte : scheme.primary,
+                    ),
+                    const SizedBox(width: Espace.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            fournisseur?.nom ?? 'Choisir le fournisseur',
+                            style: theme.textTheme.bodyLarge?.copyWith(
+                              fontWeight: FontWeight.w600,
+                              color: fournisseur == null
+                                  ? scheme.onSurfaceVariant
+                                  : scheme.onSurface,
+                            ),
+                          ),
+                          if (fournisseur != null)
+                            Text(
+                              [fournisseur!.telephone, fournisseur!.quartier]
+                                  .where((x) => x.isNotEmpty)
+                                  .join(' · '),
+                              style: theme.textTheme.bodySmall
+                                  ?.copyWith(color: scheme.onSurfaceVariant),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Icon(Icons.chevron_right_rounded,
+                        color: scheme.onSurfaceVariant),
+                  ],
+                ),
+              ),
+            ),
+          ],
+
+          const SizedBox(height: Espace.sm),
+          // Le stock et l'argent sont deux registres distincts dans toute
+          // l'application. Le dire ici évite la question qui vient toujours
+          // après : « pourquoi ma caisse n'a pas bougé ? »
+          Text(
+            livraison
+                ? "Aucune dépense n'est créée. Si ce fournisseur doit être payé, "
+                    'saisissez-la depuis Dépenses.'
+                : "Aucune dépense n'est créée : cette marchandise est réputée "
+                    'déjà payée.',
+            style: theme.textTheme.bodySmall
+                ?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+        ],
       ),
     );
   }

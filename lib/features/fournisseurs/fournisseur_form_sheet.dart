@@ -75,7 +75,11 @@ class _FournisseurFormSheetState extends ConsumerState<FournisseurFormSheet> {
       });
 
       if (!mounted) return;
-      Navigator.pop(context, true);
+      // On rend le fournisseur, et non un simple « true » : l'appelant qui
+      // vient d'en créer un au milieu d'une autre saisie — un achat, un article
+      // qu'on enregistre — peut ainsi le sélectionner tout de suite, sans avoir
+      // à le rechercher dans une liste où il vient à peine d'apparaître.
+      Navigator.pop(context, fournisseur);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context)
