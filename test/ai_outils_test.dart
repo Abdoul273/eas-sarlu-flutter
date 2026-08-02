@@ -395,7 +395,7 @@ void main() {
       expect(r, contains('-1 650 000'));
     });
 
-    test("sépare ce qui est en caisse de ce qui est encore dehors", () {
+    test('sépare ce qui est en caisse de ce qui est encore dehors', () {
       final r = sansEspacesFines(
           executerOutil(const AppelOutil('tresorerie', {}), magasin()));
 
@@ -468,7 +468,7 @@ void main() {
           reason: 'un modèle qui lit « vendre » le répétera tel quel au gérant');
     });
 
-    test("dit pourquoi la liste est vide plutôt que de laisser un blanc", () {
+    test('dit pourquoi la liste est vide plutôt que de laisser un blanc', () {
       // Le serveur ne détaille les droits des autres comptes qu'à qui gère les
       // comptes : un silence ici se lit comme une panne.
       const d = DonneesMagasin(

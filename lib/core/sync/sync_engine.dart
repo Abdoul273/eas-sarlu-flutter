@@ -560,22 +560,28 @@ class SyncEngine {
               .cast<Utilisateur>());
     }
 
+    // La fiche du serveur fait foi, y compris quand elle est VIDE.
+    //
+    // La version précédente conservait le logo et la signature locaux dès que
+    // le serveur en renvoyait des vides. L'intention était bonne — ne pas
+    // perdre une image — mais elle rendait leur SUPPRESSION impossible :
+    // retirer le logo depuis l'application web ne l'effaçait jamais du
+    // téléphone, qui continuait à l'imprimer sur les factures. Or `/data/all`
+    // renvoie la fiche entière, images comprises : un champ vide y signifie
+    // « vidé », pas « non transmis ».
+    //
+    // Les autres champs de la fiche locale sont conservés en dessous, pour un
+    // serveur plus ancien qui n'en connaîtrait pas encore certains.
     if (donnees['entreprise'] != null) {
       final entRes = donnees['entreprise'] as Map<String, dynamic>;
-      final existingEnt = await _stores.getEntreprise();
-      final mergedJson = <String, dynamic>{
-        ...(existingEnt?.toJson() ?? {}),
-        ...entRes,
-      };
-      if (existingEnt != null) {
-        if (entRes['logo'] == null || entRes['logo'].toString().isEmpty) {
-          mergedJson['logo'] = existingEnt.logo;
-        }
-        if (entRes['signatureImage'] == null || entRes['signatureImage'].toString().isEmpty) {
-          mergedJson['signatureImage'] = existingEnt.signatureImage;
-        }
-      }
-      await _stores.upsert('entreprise', Entreprise.fromJson(mergedJson));
+      final existante = await _stores.getEntreprise();
+      await _stores.upsert(
+        'entreprise',
+        Entreprise.fromJson({
+          ...(existante?.toJson() ?? const <String, dynamic>{}),
+          ...entRes,
+        }),
+      );
     }
 
     // Le journal part en dernier : une notification est un agrément, elle ne

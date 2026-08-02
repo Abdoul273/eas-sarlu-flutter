@@ -533,6 +533,62 @@ void main() {
     expect(article?.rev, 2);
   });
 
+  // ─── Fiche entreprise ───────────────────────────────────────────────────────
+  // Les deux applications partagent une seule fiche : ce qui est modifié depuis
+  // le navigateur doit atteindre le téléphone, et réciproquement.
+
+  test('une modification de la fiche entreprise atteint le téléphone', () async {
+    final engine = creerMoteur();
+    await stores.upsert('entreprise',
+        Entreprise(nom: 'E.A.S', telephone: '620', ville: 'Conakry', rev: 1));
+
+    await engine.debugAppliquerInstantane({
+      'articles': [], 'ventes': [], 'factures': [], 'clients': [],
+      'depenses': [], 'mouvements': [],
+      'entreprise': {
+        'nom': 'E.A.S Sarlu',
+        'telephone': '628 00 00 00',
+        'ville': 'Conakry',
+        '_rev': 2,
+      },
+    });
+
+    final ent = await stores.getEntreprise();
+    expect(ent?.nom, 'E.A.S Sarlu');
+    expect(ent?.telephone, '628 00 00 00');
+  });
+
+  test('retirer le logo depuis le web le retire aussi du téléphone', () async {
+    // Le moteur conservait le logo local dès que le serveur en renvoyait un
+    // vide : le supprimer depuis l'application web ne l'effaçait donc jamais du
+    // téléphone, qui continuait à l'imprimer sur les factures. `/data/all`
+    // renvoie la fiche entière : un champ vide y signifie « vidé ».
+    final engine = creerMoteur();
+    await stores.upsert(
+        'entreprise',
+        Entreprise(
+          nom: 'E.A.S Sarlu',
+          logo: 'data:image/png;base64,AAAA',
+          signatureImage: 'data:image/png;base64,BBBB',
+          rev: 1,
+        ));
+
+    await engine.debugAppliquerInstantane({
+      'articles': [], 'ventes': [], 'factures': [], 'clients': [],
+      'depenses': [], 'mouvements': [],
+      'entreprise': {
+        'nom': 'E.A.S Sarlu',
+        'logo': '',
+        'signatureImage': '',
+        '_rev': 2,
+      },
+    });
+
+    final ent = await stores.getEntreprise();
+    expect(ent?.logo, isEmpty);
+    expect(ent?.signatureImage, isEmpty);
+  });
+
   // ─── Modification d'une vente ───────────────────────────────────────────────
   // Ces opérations partaient auparavant sous le type « vente », c'est-à-dire par
   // la route de CRÉATION du serveur : un nouveau numéro était alloué, le stock
