@@ -95,7 +95,7 @@ class _ReglementSheetState extends ConsumerState<ReglementSheet> {
     return Container(
       decoration: BoxDecoration(
         color: scheme.surfaceContainerLowest,
-        borderRadius: BorderRadius.vertical(top: Radius.circular(Rayon.xl)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(Rayon.xl)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,

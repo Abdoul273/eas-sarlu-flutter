@@ -9,7 +9,9 @@ import '../auth/auth_state.dart';
 import '../db/app_database.dart' show OpQueueData, ConflitsCompanion;
 import '../db/stores.dart';
 import '../reseau.dart';
+import '../models/activite.dart';
 import '../models/models.dart';
+import '../../features/activite/notifications_provider.dart';
 import 'op_queue.dart';
 import 'sync_state.dart';
 
@@ -64,6 +66,14 @@ class SyncEngine {
   /// de transmettre ce que le serveur vient de dire.
   final Future<void> Function(List<Utilisateur>)? onUtilisateurs;
 
+  /// Prévenu du journal d'activité contenu dans le même instantané.
+  ///
+  /// C'est ce qui alimente les notifications, sans une seule requête de plus :
+  /// `/data/all` porte déjà le journal, et n'est rapatrié que lorsque la
+  /// version des données a bougé. Le fil de notifications interrogeait
+  /// auparavant `/data/activites` pour son compte, toutes les vingt secondes.
+  final Future<void> Function(List<ActiviteEntree>)? onActivites;
+
   Timer? _battement;
   Timer? _regroupementTimer;
   bool _enCours = false;
@@ -90,6 +100,7 @@ class SyncEngine {
     required SyncStateNotifier syncState,
     required Connectivity connectivity,
     this.onUtilisateurs,
+    this.onActivites,
   })  : _apiClient = apiClient,
         _stores = stores,
         _opQueue = opQueue,
@@ -556,6 +567,21 @@ class SyncEngine {
       }
       await _stores.upsert('entreprise', Entreprise.fromJson(mergedJson));
     }
+
+    // Le journal part en dernier : une notification est un agrément, elle ne
+    // doit jamais empêcher les données de s'écrire. On l'isole donc du reste du
+    // cycle, quitte à perdre une bannière.
+    final versActivites = onActivites;
+    if (versActivites != null && donnees['activites'] is List) {
+      try {
+        await versActivites((donnees['activites'] as List)
+            .whereType<Map<String, dynamic>>()
+            .map(ActiviteEntree.fromJson)
+            .toList());
+      } catch (e) {
+        debugPrint('Journal d\'activité non transmis aux notifications : $e');
+      }
+    }
   }
 
   List<dynamic> _parser(dynamic data, Function fromJson) {
@@ -687,6 +713,8 @@ final syncEngineProvider = Provider<SyncEngine>((ref) {
     connectivity: Connectivity(),
     onUtilisateurs: (utilisateurs) =>
         ref.read(authStateProvider.notifier).appliquerUtilisateurs(utilisateurs),
+    onActivites: (journal) =>
+        ref.read(notificationsProvider.notifier).ingerer(journal),
   );
   // Sans cela, un rechargement du provider laisserait derrière lui un moteur
   // dont les abonnements et les minuteurs continuent de tourner.

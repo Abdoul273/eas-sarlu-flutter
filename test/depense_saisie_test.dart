@@ -86,8 +86,11 @@ void main() {
       await tester.tap(boutonEnregistrer);
       await tester.pumpAndSettle();
 
-      // Vérifier que la dépense est enregistrée dans le store avec le montant 250 000 GNF
-      final depenses = await stores.watchDepenses().first;
+      // Vérifier que la dépense est enregistrée dans le store avec le montant
+      // 250 000 GNF. Lecture ponctuelle et non `watchDepenses().first` : une
+      // souscription à un flux drift ne s'annule pas dans le temps simulé d'un
+      // test widget, et `db.close()` attendait alors indéfiniment.
+      final depenses = await stores.getDepenses();
       expect(depenses.length, 1);
       expect(depenses.first.libelle, 'Achat carburant');
       expect(depenses.first.montant, 250000);

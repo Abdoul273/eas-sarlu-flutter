@@ -9,6 +9,11 @@
          pour l'ouvrir, seulement pour synchroniser. -->
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
+    <!-- Depuis Android 13, une application qui ne déclare PAS cette permission
+         n'affiche aucune notification : pas d'erreur, pas de journal, rien.
+         Le système de notifications d'activité était donc entièrement muet sur
+         tous les téléphones récents, alors que le badge, lui, se remplissait. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
     <application
         android:label="E.A.S Sarlu"
         android:name="${applicationName}"

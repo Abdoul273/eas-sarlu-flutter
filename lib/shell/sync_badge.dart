@@ -110,7 +110,7 @@ class QueueSheet extends ConsumerWidget {
         return Container(
           decoration: BoxDecoration(
             color: scheme.surfaceContainerLowest,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(Rayon.xl)),
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(Rayon.xl)),
           ),
           child: Column(
             children: [

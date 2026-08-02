@@ -221,6 +221,49 @@ class Stores {
         compare: (a, b) => a.nom.compareTo(b.nom));
   }
 
+  /// Lecture ponctuelle d'une collection entière.
+  ///
+  /// Doublon délibéré des flux `watch…` ci-dessous : un appelant qui ne veut
+  /// qu'une photo (l'assistant qui construit son contexte, un test, un export)
+  /// n'a pas à ouvrir un flux pour en prendre le premier élément. Ouvrir un flux
+  /// pour le refermer aussitôt laisse une souscription à annuler, ce qui bloque
+  /// la fermeture de la base dans les tests widget — et, en production, fait
+  /// travailler drift pour rien.
+  Future<List<T>> _getAll<T>(
+    String kind,
+    T Function(Map<String, dynamic>) fromJson, {
+    int Function(T, T)? compare,
+  }) async {
+    final rows = await _selectKind(kind).get();
+    return _mapRows(rows, fromJson, compare: compare);
+  }
+
+  /// Clients triés par nom.
+  Future<List<Client>> getClients() => _getAll('client', Client.fromJson,
+      compare: (a, b) => a.nom.toLowerCase().compareTo(b.nom.toLowerCase()));
+
+  /// Ventes, les plus récentes en premier.
+  Future<List<Vente>> getVentes() => _getAll('vente', Vente.fromJson,
+      compare: (a, b) => b.date.compareTo(a.date));
+
+  /// Factures, les plus récentes en premier.
+  Future<List<Facture>> getFactures() => _getAll('facture', Facture.fromJson,
+      compare: (a, b) => b.dateEmission.compareTo(a.dateEmission));
+
+  /// Dépenses, les plus récentes en premier.
+  Future<List<Depense>> getDepenses() => _getAll('depense', Depense.fromJson,
+      compare: (a, b) => b.date.compareTo(a.date));
+
+  /// Mouvements de stock, les plus récents en premier.
+  Future<List<MouvementStock>> getMouvements() =>
+      _getAll('mouvement', MouvementStock.fromJson,
+          compare: (a, b) => b.date.compareTo(a.date));
+
+  /// Utilisateurs triés par nom.
+  Future<List<Utilisateur>> getUtilisateurs() =>
+      _getAll('user', Utilisateur.fromJson,
+          compare: (a, b) => a.nom.toLowerCase().compareTo(b.nom.toLowerCase()));
+
   // --- Flux réactifs ---
 
   /// Articles triés par nom.

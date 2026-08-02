@@ -8,48 +8,10 @@ import '../../app/ui_kit.dart';
 import '../../core/api/api_client.dart';
 import '../../core/api/endpoints.dart';
 import '../../core/auth/auth_state.dart';
+import '../../core/models/activite.dart';
+import 'activite_style.dart';
 
-// Modèle simple pour une entrée d'activité (venant du serveur)
-class ActiviteEntree {
-  final String id;
-  final String type; // vente, article, client, facture, mouvement, appareil
-  final String description;
-  final String auteur;
-  final String date; // ISO 8601
-  final bool horsLigne;
-
-  /// Objet visé par l'activité, tel que renvoyé par le serveur
-  /// (`cible: { kind, id }`).
-  final String? cibleKind;
-  final String? cibleId;
-
-  ActiviteEntree({
-    required this.id,
-    required this.type,
-    required this.description,
-    required this.auteur,
-    required this.date,
-    this.horsLigne = false,
-    this.cibleKind,
-    this.cibleId,
-  });
-
-  factory ActiviteEntree.fromJson(Map<String, dynamic> json) {
-    final cible = json['cible'] as Map<String, dynamic>?;
-    return ActiviteEntree(
-      id: json['id'] as String? ?? '',
-      type: json['type'] as String? ?? '',
-      description: json['libelle'] as String? ?? '',
-      auteur: json['utilisateur'] as String? ?? '',
-      date: json['date']?.toString() ?? '',
-      horsLigne: json['horsLigne'] as bool? ?? false,
-      cibleKind: cible?['kind'] as String?,
-      cibleId: cible?['id'] as String?,
-    );
-  }
-
-  DateTime? get dateTime => DateTime.tryParse(date);
-}
+export '../../core/models/activite.dart' show ActiviteEntree;
 
 // Provider pour la liste filtrée
 final activitesProvider =
@@ -126,61 +88,18 @@ class _ActivitePageState extends ConsumerState<ActivitePage> {
     }
   }
 
-  IconData _iconForType(String type) {
-    switch (type) {
-      case 'vente':
-        return Icons.point_of_sale_rounded;
-      case 'article':
-        return Icons.inventory_2_rounded;
-      case 'client':
-        return Icons.person_rounded;
-      case 'facture':
-        return Icons.receipt_long_rounded;
-      case 'mouvement':
-        return Icons.sync_rounded;
-      case 'appareil':
-        return Icons.phone_android_rounded;
-      default:
-        return Icons.history_rounded;
-    }
-  }
+  IconData _iconForType(String type) => iconeActivite(type);
 
-  Color _colorForType(BuildContext context, String type) {
-    final scheme = Theme.of(context).colorScheme;
-    switch (type) {
-      case 'vente':
-        return scheme.primary;
-      case 'article':
-        return Colors.teal;
-      case 'client':
-        return Colors.green;
-      case 'facture':
-        return Colors.amber[800]!;
-      case 'mouvement':
-        return Colors.purple;
-      case 'appareil':
-        return Colors.blueGrey;
-      default:
-        return scheme.onSurfaceVariant;
-    }
-  }
+  Color _colorForType(BuildContext context, String type) =>
+      couleurActivite(context, type);
 
   void _navigateToObject(BuildContext context, ActiviteEntree entree) {
-    final objectId = entree.cibleId;
-    if (objectId == null || objectId.isEmpty) return;
-    switch (entree.cibleKind) {
-      case 'article':
-        context.pushNamed('detail-article', pathParameters: {'id': objectId});
-        break;
-      case 'client':
-        context.pushNamed('detail-client', pathParameters: {'id': objectId});
-        break;
-      case 'facture':
-        context.pushNamed('detail-facture', pathParameters: {'id': objectId});
-        break;
-      default:
-        break;
-    }
+    // La destination est portée par le modèle : le journal, le menu du badge et
+    // le clic sur une notification système mènent ainsi tous les trois au même
+    // endroit pour une même entrée.
+    final destination = entree.destination;
+    if (destination == null) return;
+    context.push(destination);
   }
 
   @override
@@ -190,24 +109,11 @@ class _ActivitePageState extends ConsumerState<ActivitePage> {
     final activitesAsync = ref.watch(activitesProvider);
     final notifier = ref.read(activitesProvider.notifier);
 
-    final types = [
-      '',
-      'vente',
-      'article',
-      'client',
-      'facture',
-      'mouvement',
-      'appareil'
-    ];
-    final typeLabels = [
-      'Tous',
-      'Ventes',
-      'Articles',
-      'Clients',
-      'Factures',
-      'Mouvements',
-      'Appareils'
-    ];
+    // Un filtre par type réellement émis par le serveur. La liste en comptait
+    // sept sur les onze existants : dépenses, prix, comptes, paramètres et
+    // sauvegardes n'étaient atteignables par aucun filtre.
+    final types = kFiltresActivite.map((f) => f.$1).toList();
+    final typeLabels = kFiltresActivite.map((f) => f.$2).toList();
 
     return PopScope(
       canPop: false,
