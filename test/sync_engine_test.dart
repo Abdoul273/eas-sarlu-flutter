@@ -596,6 +596,73 @@ void main() {
     expect(article?.rev, 2);
   });
 
+  // ─── Mouvements de stock hors ligne ─────────────────────────────────────────
+  // Une entrée de marchandise saisie sans réseau n'était déposée que dans la
+  // file : le stock à l'écran ne bougeait pas. Le magasin voyait toujours zéro
+  // barre après en avoir reçu cinquante, les ressaisissait, et le serveur en
+  // comptait cent au retour de la connexion.
+
+  test('une entrée en file remonte le stock après un instantané', () async {
+    final engine = creerMoteur();
+    await opQueue.enqueue('mouvement', {
+      'mouvement': {
+        'id': 'mv1',
+        'articleId': 'a1',
+        'type': 'entrée',
+        'quantite': 50,
+        'date': '2026-08-02T09:00:00.000Z',
+      },
+    });
+
+    // Le serveur ne connaît pas encore ce mouvement : son instantané rend le
+    // stock d'avant.
+    await engine.debugAppliquerInstantane({
+      'ventes': [], 'factures': [], 'clients': [], 'depenses': [],
+      'mouvements': [],
+      'articles': [
+        {'id': 'a1', 'nom': 'Fer 8', 'unite': 'Barre', 'stock': 0, '_rev': 4},
+      ],
+    });
+    await engine.debugRejouerOperationsLocales();
+
+    expect((await stores.getArticle('a1'))?.stock, 50);
+    expect(await stores.getMouvement('mv1'), isNotNull);
+  });
+
+  test('un mouvement déjà revenu du serveur n\'est pas recompté', () async {
+    final engine = creerMoteur();
+    await opQueue.enqueue('mouvement', {
+      'mouvement': {
+        'id': 'mv1',
+        'articleId': 'a1',
+        'type': 'entrée',
+        'quantite': 50,
+        'date': '2026-08-02T09:00:00.000Z',
+      },
+    });
+
+    // Cette fois le serveur l'a appliqué : le stock qu'il rend le comprend
+    // déjà. Le rejouer porterait le stock à cent.
+    await engine.debugAppliquerInstantane({
+      'ventes': [], 'factures': [], 'clients': [], 'depenses': [],
+      'articles': [
+        {'id': 'a1', 'nom': 'Fer 8', 'unite': 'Barre', 'stock': 50, '_rev': 5},
+      ],
+      'mouvements': [
+        {
+          'id': 'mv1',
+          'articleId': 'a1',
+          'type': 'entrée',
+          'quantite': 50,
+          'date': '2026-08-02T09:00:00.000Z',
+        },
+      ],
+    });
+    await engine.debugRejouerOperationsLocales();
+
+    expect((await stores.getArticle('a1'))?.stock, 50);
+  });
+
   // ─── Fiche entreprise ───────────────────────────────────────────────────────
   // Les deux applications partagent une seule fiche : ce qui est modifié depuis
   // le navigateur doit atteindre le téléphone, et réciproquement.

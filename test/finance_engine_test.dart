@@ -122,6 +122,32 @@ void main() {
     });
   });
 
+  group('stockApresMouvement', () {
+    test('une entrée ajoute, une sortie retranche', () {
+      expect(stockApresMouvement(10, 'entrée', 5), 15);
+      expect(stockApresMouvement(10, 'sortie', 5), 5);
+    });
+
+    test('un ajustement REMPLACE le stock, il ne s\'y ajoute pas', () {
+      // C'est le sens d'un inventaire : on ne dit pas de combien on s'est
+      // trompé, on dit ce qu'il y a réellement en dépôt. Le serveur applique la
+      // même règle (mode « absolu » de applyStock).
+      expect(stockApresMouvement(10, 'ajustement', 3), 3);
+      expect(stockApresMouvement(0, 'ajustement', 42), 42);
+    });
+
+    test('jamais de stock négatif', () {
+      // Le serveur borne aussi à zéro : laisser passer un négatif à l'écran
+      // ferait diverger les deux affichages sans que rien ne le signale.
+      expect(stockApresMouvement(3, 'sortie', 10), 0);
+    });
+
+    test('une quantité négative est lue en valeur absolue', () {
+      expect(stockApresMouvement(10, 'entrée', -5), 15);
+      expect(stockApresMouvement(10, 'sortie', -5), 5);
+    });
+  });
+
   // ─── Trésorerie ─────────────────────────────────────────────────────────────
   // Le chiffre affiché sous « En caisse » sur le tableau de bord. Les mêmes
   // affirmations existent mot pour mot dans `src/lib/__tests__/finance.test.ts`

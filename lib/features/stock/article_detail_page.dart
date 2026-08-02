@@ -157,7 +157,7 @@ class ArticleDetailPage extends ConsumerWidget {
                           icon: Icons.add_business_rounded,
                           color: metier.succes,
                           onPressed: () =>
-                              _mouvement(context, 'entrée', article),
+                              _achatFournisseur(context, article),
                         ),
                       ),
                       const SizedBox(width: Espace.xs + 2),
@@ -1101,14 +1101,15 @@ class ArticleDetailPage extends ConsumerWidget {
     );
   }
 
-  void _mouvement(BuildContext context, String type, Article article) {
+  /// Ouvre la saisie d'une entrée de marchandise chez un fournisseur.
+  void _achatFournisseur(BuildContext context, Article article) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       showDragHandle: false,
       shape: RoundedRectangleBorder(borderRadius: Rayon.feuille),
       backgroundColor: Theme.of(context).colorScheme.surfaceContainerLow,
-      builder: (_) => MouvementSheet(article: article, typePreChoisi: type),
+      builder: (_) => MouvementSheet(article: article),
     );
   }
 

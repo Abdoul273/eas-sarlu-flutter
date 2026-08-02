@@ -746,8 +746,26 @@ class SyncEngine {
         await _stores.supprimer('fournisseur', payload['id'] as String);
 
       case 'mouvement':
+        final mouvement = MouvementStock.fromJson(payload['mouvement']);
+        // Déjà revenu du serveur : son effet sur le stock y est compris, le
+        // rejouer décrémenterait deux fois. Même garde que pour une vente.
+        if (await _stores.getMouvement(mouvement.id) != null) return;
+
+        await _stores.upsert('mouvement', mouvement);
+
+        // Et le stock avec lui. Sans cette ligne, une entrée de marchandise
+        // saisie hors ligne laissait le stock inchangé à l'écran : le magasin
+        // voyait toujours zéro barre après en avoir reçu cinquante, les
+        // ressaisissait, et le serveur en comptait cent au retour du réseau.
+        final articleMv = await _stores.getArticle(mouvement.articleId);
+        if (articleMv == null) return;
         await _stores.upsert(
-            'mouvement', MouvementStock.fromJson(payload['mouvement']));
+          'article',
+          articleMv.copyWith(
+            stock: stockApresMouvement(
+                articleMv.stock, mouvement.type, mouvement.quantite),
+          ),
+        );
 
       case 'facture_paiement':
         final paiement = Paiement.fromJson(payload['paiement']);

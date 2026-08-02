@@ -10,19 +10,30 @@ import '../../core/db/stores.dart';
 import '../dashboard/dashboard_page.dart';
 import '../fournisseurs/fournisseur_form_sheet.dart';
 
+/// Cette feuille n'enregistre que des entrées de marchandise. Écrit une fois,
+/// ici, plutôt qu'en dur à trois endroits du fichier — dont l'un servait à
+/// afficher le stock prévu et un autre à l'enregistrer.
+const String _kTypeMouvement = 'entrée';
+
 final fournisseursMouvementProvider = StreamProvider.autoDispose<List<Fournisseur>>((ref) {
   final stores = ref.watch(storesProvider);
   return stores.watchFournisseurs();
 });
 
+/// Saisie d'une entrée de marchandise chez un fournisseur.
+///
+/// La feuille portait auparavant les trois natures de mouvement (entrée,
+/// sortie, ajustement) ; elle est désormais dédiée à l'achat fournisseur. Le
+/// paramètre `typePreChoisi` qui la pilotait a été RETIRÉ plutôt que laissé en
+/// place : le corps de la méthode l'ignorait déjà et écrivait « entrée » en
+/// dur, si bien qu'un appel avec « sortie » aurait enregistré une entrée — un
+/// paramètre qui ne fait rien est un piège tendu au prochain appelant.
 class MouvementSheet extends ConsumerStatefulWidget {
   final Article article;
-  final String typePreChoisi;
 
   const MouvementSheet({
     super.key,
     required this.article,
-    required this.typePreChoisi,
   });
 
   @override
@@ -65,9 +76,11 @@ class _MouvementSheetState extends ConsumerState<MouvementSheet> {
     _quantiteCtrl.selection = TextSelection.collapsed(offset: _quantiteCtrl.text.length);
   }
 
-  int _stockApres() {
-    return widget.article.stock + _quantite;
-  }
+  /// Le stock annoncé à l'écran passe par la même règle que l'écriture, et que
+  /// celle du serveur : trois additions écrites séparément finissent par dire
+  /// trois choses différentes.
+  int _stockApres() =>
+      stockApresMouvement(widget.article.stock, _kTypeMouvement, _quantite);
 
   Future<void> _valider() async {
     final quantite = parseMontantClean(_quantiteCtrl.text);
@@ -112,7 +125,7 @@ class _MouvementSheetState extends ConsumerState<MouvementSheet> {
     final mouvement = MouvementStock(
       id: const Uuid().v4(),
       articleId: widget.article.id,
-      type: 'entrée',
+      type: _kTypeMouvement,
       quantite: quantite,
       date: DateTime.now().toIso8601String(),
       utilisateur: ref.read(utilisateurActuelProvider)?.nom ?? 'Utilisateur',
@@ -125,7 +138,28 @@ class _MouvementSheetState extends ConsumerState<MouvementSheet> {
     );
 
     try {
+      final stores = ref.read(storesProvider);
       final opQueue = ref.read(opQueueProvider);
+
+      // Écriture locale AVANT l'envoi : l'application sert d'abord hors ligne.
+      // Seule la file était alimentée jusqu'ici, si bien qu'une entrée saisie
+      // sans réseau ne bougeait pas le stock à l'écran — le magasin voyait
+      // toujours zéro barre après en avoir reçu cinquante, les ressaisissait,
+      // et le serveur en comptait cent au retour de la connexion. Le stock du
+      // serveur reste celui qui fait foi : il écrasera celui-ci au prochain
+      // instantané.
+      await stores.upsert('mouvement', mouvement);
+      final frais = await stores.getArticle(widget.article.id);
+      if (frais != null) {
+        await stores.upsert(
+          'article',
+          frais.copyWith(
+            stock: stockApresMouvement(
+                frais.stock, mouvement.type, mouvement.quantite),
+          ),
+        );
+      }
+
       await opQueue.enqueue('mouvement', {'mouvement': mouvement.toJson()});
       if (!mounted) return;
       Navigator.pop(context, true);

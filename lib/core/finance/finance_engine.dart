@@ -393,6 +393,27 @@ String stockStatut(Article a) {
   return 'en-stock';
 }
 
+/// Ce que devient le stock d'un article après un mouvement.
+///
+/// Une entrée ajoute, une sortie retranche, un ajustement REMPLACE — c'est le
+/// sens d'un inventaire : on ne dit pas de combien on s'est trompé, on dit ce
+/// qu'il y a réellement en dépôt. C'est exactement la règle qu'applique
+/// `applyStock` côté serveur (mode « delta » ou « absolu »), et elle est écrite
+/// ici pour que l'écran affiche le même chiffre que celui qui sera enregistré.
+///
+/// Jamais négatif : le serveur borne lui aussi à zéro, et laisser passer un
+/// négatif à l'écran ferait diverger les deux affichages sans que rien ne le
+/// signale.
+int stockApresMouvement(int stockActuel, String type, int quantite) {
+  final q = quantite.abs();
+  final apres = switch (type) {
+    'entrée' => stockActuel + q,
+    'sortie' => stockActuel - q,
+    _ => q, // ajustement : la quantité saisie EST le nouveau stock
+  };
+  return apres < 0 ? 0 : apres;
+}
+
 /// Valeur du stock au prix d'achat : ce que la marchandise en dépôt a coûté.
 int valeurStockAchat(List<Article> articles) =>
     articles.fold<int>(0, (s, a) => s + a.stock * a.prixAchat);
