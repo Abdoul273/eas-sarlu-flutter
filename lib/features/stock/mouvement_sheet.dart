@@ -127,6 +127,12 @@ class _MouvementSheetState extends ConsumerState<MouvementSheet> {
       articleId: widget.article.id,
       type: _kTypeMouvement,
       quantite: quantite,
+      // Avant/après tels que ce téléphone les connaît : le serveur les
+      // recalculera sur son propre stock, mais le journal local les montre
+      // tout de suite.
+      quantiteAvant: widget.article.stock,
+      quantiteApres:
+          stockApresMouvement(widget.article.stock, _kTypeMouvement, quantite),
       date: DateTime.now().toIso8601String(),
       utilisateur: ref.read(utilisateurActuelProvider)?.nom ?? 'Utilisateur',
       note: _noteCtrl.text.trim(),
@@ -148,17 +154,21 @@ class _MouvementSheetState extends ConsumerState<MouvementSheet> {
       // et le serveur en comptait cent au retour de la connexion. Le stock du
       // serveur reste celui qui fait foi : il écrasera celui-ci au prochain
       // instantané.
-      await stores.upsert('mouvement', mouvement);
-      final frais = await stores.getArticle(widget.article.id);
-      if (frais != null) {
-        await stores.upsert(
-          'article',
-          frais.copyWith(
-            stock: stockApresMouvement(
-                frais.stock, mouvement.type, mouvement.quantite),
-          ),
-        );
-      }
+      //
+      // Mouvement et stock dans UNE transaction : tout passe, ou rien.
+      await stores.transaction(() async {
+        await stores.upsert('mouvement', mouvement);
+        final frais = await stores.getArticle(widget.article.id);
+        if (frais != null) {
+          await stores.upsert(
+            'article',
+            frais.copyWith(
+              stock: stockApresMouvement(
+                  frais.stock, mouvement.type, mouvement.quantite),
+            ),
+          );
+        }
+      });
 
       await opQueue.enqueue('mouvement', {'mouvement': mouvement.toJson()});
       if (!mounted) return;

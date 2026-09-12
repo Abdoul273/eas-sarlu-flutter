@@ -86,17 +86,14 @@ final depensesFiltreesProvider = Provider.family<
 final totauxMoisProvider =
     Provider.family<({int total, int regle, int reste}), DateTime>((ref, mois) {
   final depenses = ref.watch(toutesDepensesProvider).valueOrNull ?? [];
-  final duMois = depenses.where((d) {
-    try {
-      final date = DateTime.parse(d.date);
-      return date.year == mois.year && date.month == mois.month;
-    } catch (_) {
-      return false;
-    }
-  }).toList();
+  final periode = Periode.mois(mois.year, mois.month);
+  final duMois = depenses.where((d) => dansPeriode(d.date, periode)).toList();
   final total = duMois.fold<int>(0, (sum, d) => sum + d.montant);
   final regle = duMois.fold<int>(0, (sum, d) => sum + montantRegle(d));
-  return (total: total, regle: regle, reste: total - regle);
+  // Le reste est la somme de ce qui est encore dû, dépense par dépense : un
+  // trop-versé sur l'une ne « rembourse » pas la dette d'une autre.
+  final reste = duMois.fold<int>(0, (sum, d) => sum + resteAPayer(d));
+  return (total: total, regle: regle, reste: reste);
 });
 
 class DepensesPage extends ConsumerStatefulWidget {

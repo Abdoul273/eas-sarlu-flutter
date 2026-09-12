@@ -283,11 +283,11 @@ class _ArticleCard extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final metier = context.metier;
-    final stockColor = article.stock <= 0
-        ? metier.danger
-        : article.stock <= article.stockMin
-            ? metier.alerte
-            : metier.succes;
+    final stockColor = switch (stockStatut(article)) {
+      'rupture' => metier.danger,
+      'faible' => metier.alerte,
+      _ => metier.succes,
+    };
 
     return AppCard(
       onTap: onTap,

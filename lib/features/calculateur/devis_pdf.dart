@@ -29,10 +29,12 @@ import '../factures/facture_pdf.dart';
 /// date de fin engage le magasin indéfiniment.
 const int kValiditeDevisJours = 7;
 
-/// Numéro de la proforma — `PRO-2026-0802-1432`.
+/// Numéro de la proforma — `PRO-2026-0802-143215`.
 ///
-/// L'année, le jour puis l'heure : deux devis du même comptoir ne peuvent se
-/// confondre, et le numéro se classe tout seul dans l'ordre chronologique. Il
+/// L'année, le jour puis l'heure à la seconde : deux devis du même comptoir ne
+/// peuvent se confondre — à la minute près, deux chiffrages coup sur coup
+/// sortaient sous le même numéro —, et il se classe tout seul dans l'ordre
+/// chronologique. Il
 /// n'est PAS tiré de la série des ventes : un chiffrage sans suite y laisserait
 /// un trou inexplicable.
 ///
@@ -46,7 +48,7 @@ const int kValiditeDevisJours = 7;
 String numeroDevis(DateTime quand) {
   String d(int n, [int large = 2]) => n.toString().padLeft(large, '0');
   return 'PRO-${quand.year}-${d(quand.month)}${d(quand.day)}-'
-      '${d(quand.hour)}${d(quand.minute)}';
+      '${d(quand.hour)}${d(quand.minute)}${d(quand.second)}';
 }
 
 /// Ce que le calculateur transmet au document.

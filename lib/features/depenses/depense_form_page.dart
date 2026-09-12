@@ -76,27 +76,59 @@ class _DepenseFormPageState extends ConsumerState<DepenseFormPage> {
 
     setState(() => _isSubmitting = true);
 
-    final depense = Depense(
-      id: widget.depense?.id ?? const Uuid().v4(),
-      numero: widget.depense?.numero ?? '',
-      date: _date.toIso8601String(),
-      categorie: _categorie,
-      libelle: _libelleCtrl.text.trim(),
-      beneficiaire: _beneficiaireCtrl.text.trim(),
-      montant: montant,
-      reference: _referenceCtrl.text.trim(),
-      note: _noteCtrl.text.trim(),
-      creePar: ref.read(utilisateurActuelProvider)?.nom ?? 'Utilisateur',
-      // `nature` et `statut` ne sont pas passés : ils se déduisent de la
-      // catégorie et des règlements. Les saisir ici, c'est risquer de les
-      // écrire faux.
-      reglements: widget.depense?.reglements ?? [],
-    );
-
     try {
       final stores = ref.read(storesProvider);
       final opQueue = ref.read(opQueueProvider);
-      final baseRev = widget.depense?.rev;
+
+      // En modification, on repart de la dépense TELLE QU'ELLE EST en base,
+      // pas de la copie reçue à l'ouverture : un règlement encaissé entre
+      // temps (par un collègue, par synchronisation) serait sinon effacé
+      // par cette écriture.
+      final existante = widget.depense == null
+          ? null
+          : (await stores.getDepense(widget.depense!.id) ?? widget.depense);
+
+      // On ne descend jamais une dépense sous ce qui a déjà été versé au
+      // bénéficiaire : le magasin se retrouverait créancier de son
+      // fournisseur sans que personne ne l'ait décidé. Même règle que pour
+      // une vente déjà encaissée.
+      if (existante != null) {
+        final regle = montantRegle(existante);
+        if (montant < regle) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('${fmtGNF(regle)} ont déjà été réglés sur cette '
+                'dépense : son montant ne peut pas descendre en dessous.'),
+            backgroundColor: Theme.of(context).colorScheme.error,
+          ));
+          return;
+        }
+      }
+
+      final depense = Depense(
+        id: existante?.id ?? const Uuid().v4(),
+        numero: existante?.numero ?? '',
+        date: _date.toIso8601String(),
+        categorie: _categorie,
+        libelle: _libelleCtrl.text.trim(),
+        beneficiaire: _beneficiaireCtrl.text.trim(),
+        montant: montant,
+        reference: _referenceCtrl.text.trim(),
+        note: _noteCtrl.text.trim(),
+        // Celui qui a SAISI la dépense reste son auteur ; une correction ne
+        // réécrit pas l'histoire.
+        creePar: existante?.creePar.isNotEmpty == true
+            ? existante!.creePar
+            : ref.read(utilisateurActuelProvider)?.nom ?? 'Utilisateur',
+        // `nature` et `statut` ne sont pas passés : ils se déduisent de la
+        // catégorie et des règlements. Les saisir ici, c'est risquer de les
+        // écrire faux.
+        reglements: existante?.reglements ?? const [],
+        rev: existante?.rev,
+        updatedAt: existante?.updatedAt,
+        updatedBy: existante?.updatedBy,
+      );
+      final baseRev = existante?.rev;
 
       await stores.upsert('depense', depense);
       await opQueue.enqueue('depense', {

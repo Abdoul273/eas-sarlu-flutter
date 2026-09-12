@@ -62,6 +62,12 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
   final List<LignePanier> _panier = [];
   final _uuid = const Uuid();
 
+  /// Empêche un second encaissement tant que le premier n'est pas terminé.
+  /// Sans lui, un double appui sur « Encaisser » — fréquent sur un écran
+  /// tactile — créait DEUX ventes, deux factures, et sortait deux fois la
+  /// marchandise du stock.
+  bool _envoiEnCours = false;
+
   @override
   void initState() {
     super.initState();
@@ -107,12 +113,20 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
             manques.add('${article.nom} (${fmtNombre(qte)} sur ${fmtNombre(voulu)})');
           }
           setState(() {
-            _panier.add(LignePanier(
-              id: _uuid.v4(),
-              article: article,
-              quantite: qte,
-              prixUnitaire: prix,
-            ));
+            // Même règle qu'à l'ajout manuel : un article déjà présent se
+            // cumule sur sa ligne au lieu d'en ouvrir une seconde.
+            final existante =
+                _panier.where((l) => l.article.id == article.id).firstOrNull;
+            if (existante != null) {
+              existante.quantite += qte;
+            } else {
+              _panier.add(LignePanier(
+                id: _uuid.v4(),
+                article: article,
+                quantite: qte,
+                prixUnitaire: prix,
+              ));
+            }
           });
         }
       }
@@ -171,11 +185,21 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
       return;
     }
     setState(() {
-      _panier.add(LignePanier(
-        id: _uuid.v4(),
-        article: article,
-        prixUnitaire: article.prixVente,
-      ));
+      // Un article déjà au panier voit sa quantité augmenter plutôt que de
+      // se retrouver sur deux lignes : une facture avec « Tôle 3 mm » écrit
+      // deux fois se lit mal, et une seule ligne par article garantit que
+      // le stock est retranché exactement une fois.
+      final existante =
+          _panier.where((l) => l.article.id == article.id).firstOrNull;
+      if (existante != null) {
+        existante.quantite += 1;
+      } else {
+        _panier.add(LignePanier(
+          id: _uuid.v4(),
+          article: article,
+          prixUnitaire: article.prixVente,
+        ));
+      }
       _articleController.clear();
       _articleQuery = '';
     });
@@ -217,11 +241,24 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
   }
 
   Future<void> _encaisser() async {
+    if (_envoiEnCours) return;
     if (_panier.isEmpty) {
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Le panier est vide')));
       return;
     }
+    setState(() => _envoiEnCours = true);
+    try {
+      await _enregistrerVente();
+    } catch (e) {
+      // Une erreur muette ici, c'est un vendeur qui croit la vente faite.
+      if (mounted) _avertir('Vente non enregistrée : $e');
+    } finally {
+      if (mounted) setState(() => _envoiEnCours = false);
+    }
+  }
+
+  Future<void> _enregistrerVente() async {
     final utilisateur = ref.read(utilisateurActuelProvider);
     final maintenant = DateTime.now();
     // La vente porte l'instant précis, la facture la seule date : c'est ce que
@@ -281,12 +318,19 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
       totalNet: totalNet,
     );
 
-    final lignesStock = _panier
-        .map((l) => {
-              'articleId': l.article.id,
-              'quantite': l.quantite,
-            })
-        .toList();
+    // Quantité sortie PAR ARTICLE, toutes lignes confondues. Deux lignes du
+    // même article — possible via un devis pré-rempli — se cumulent : sans
+    // cela, chaque ligne recalculait le stock depuis la même valeur de
+    // départ, et seule la dernière écriture restait.
+    final sortiesParArticle = <String, int>{};
+    for (final l in _panier) {
+      sortiesParArticle.update(l.article.id, (q) => q + l.quantite,
+          ifAbsent: () => l.quantite);
+    }
+    final lignesStock = [
+      for (final e in sortiesParArticle.entries)
+        {'articleId': e.key, 'quantite': e.value},
+    ];
 
     final stores = ref.read(storesProvider);
     final opQueue = ref.read(opQueueProvider);
@@ -327,10 +371,11 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
     }
 
     await stores.transaction(() async {
-      for (final l in _panier) {
-        final a = frais[l.article.id]!;
+      for (final e in sortiesParArticle.entries) {
+        final a = frais[e.key];
+        if (a == null) continue;
         await stores.upsert(
-            'article', a.copyWith(stock: stockApresSortie(a.stock, l.quantite)));
+            'article', a.copyWith(stock: stockApresSortie(a.stock, e.value)));
       }
       await stores.upsert('vente', vente);
       await stores.upsert('facture', facture);
@@ -720,6 +765,7 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
                     label: 'Encaisser (${fmtGNF(totalHT)})',
                     icon: Icons.point_of_sale_rounded,
                     expanded: true,
+                    loading: _envoiEnCours,
                     onPressed: _panier.isNotEmpty ? _encaisser : null,
                   ),
                 ],

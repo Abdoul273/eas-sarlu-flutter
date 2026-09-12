@@ -51,36 +51,60 @@ class _PaiementSheetState extends ConsumerState<PaiementSheet> {
   }
 
   Future<void> _valider() async {
+    if (_isSubmitting) return;
     final montantSaisi = parseMontantClean(_montantCtrl.text);
-    final reste = resteDu(widget.facture);
-    if (montantSaisi <= 0 || montantSaisi > reste) {
+    if (montantSaisi <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Montant invalide ou supérieur au reste dû')),
+        const SnackBar(content: Text('Saisissez un montant supérieur à zéro')),
       );
       return;
     }
 
     setState(() => _isSubmitting = true);
 
-    final paiement = Paiement(
-      id: const Uuid().v4(),
-      date: DateTime.now().toIso8601String(),
-      montant: montantSaisi,
-      mode: _mode,
-      note: _noteCtrl.text.trim(),
-      utilisateur: ref.read(utilisateurActuelProvider)?.nom ?? 'Utilisateur',
-    );
-
     try {
       final opQueue = ref.read(opQueueProvider);
       final stores = ref.read(storesProvider);
 
-      await stores.upsert('facture', widget.facture.avecPaiement(paiement));
+      // La facture est RELUE au moment de valider, pas prise telle qu'elle
+      // était à l'ouverture de la feuille : un versement encaissé entre
+      // temps sur un autre poste, ou arrivé par synchronisation, aurait
+      // sinon été ignoré — et le client aurait payé deux fois.
+      final facture =
+          await stores.getFacture(widget.facture.id) ?? widget.facture;
+      final reste = resteDu(facture);
+      if (reste <= 0) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Cette facture est déjà soldée')),
+        );
+        Navigator.pop(context, false);
+        return;
+      }
+      if (montantSaisi > reste) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Le versement dépasse le reste dû (${fmtGNF(reste)})'),
+        ));
+        return;
+      }
+
+      final paiement = Paiement(
+        id: const Uuid().v4(),
+        date: DateTime.now().toIso8601String(),
+        montant: montantSaisi,
+        mode: _mode,
+        note: _noteCtrl.text.trim(),
+        utilisateur:
+            ref.read(utilisateurActuelProvider)?.nom ?? 'Utilisateur',
+      );
+
+      await stores.upsert('facture', facture.avecPaiement(paiement));
 
       await opQueue.enqueue('facture_paiement', {
-        'factureId': widget.facture.id,
+        'factureId': facture.id,
         'paiement': paiement.toJson(),
-        'baseRev': widget.facture.rev,
+        if (facture.rev != null) 'baseRev': facture.rev,
       });
 
       if (!mounted) return;

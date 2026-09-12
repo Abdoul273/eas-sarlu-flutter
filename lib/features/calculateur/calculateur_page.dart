@@ -178,16 +178,15 @@ class _CalculateurPageState extends ConsumerState<CalculateurPage> {
                                     const SizedBox(height: Espace.xs),
                                 itemBuilder: (context, index) {
                                   final article = filtres[index];
-                                  final existingItem = _items.firstWhere(
-                                    (i) => i.article.id == article.id,
-                                    orElse: () => _ItemCalculateur(
-                                      id: '',
-                                      article: article,
-                                      quantite: 0,
-                                      prixUnitaire: 0,
-                                    ),
-                                  );
-                                  final qteDansListe = existingItem.quantite;
+                                  // `firstOrNull` et non `firstWhere(orElse)` :
+                                  // l'ancien repli construisait un item — et
+                                  // ses deux contrôleurs de texte — à chaque
+                                  // ligne affichée, sans jamais les libérer.
+                                  final qteDansListe = _items
+                                          .where((i) => i.article.id == article.id)
+                                          .firstOrNull
+                                          ?.quantite ??
+                                      0;
 
                                   return AppCard(
                                     onTap: () {

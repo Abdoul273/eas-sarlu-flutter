@@ -80,7 +80,7 @@ final statsStockProvider =
     Provider<({int valeur, int alertes, int mouvements})>((ref) {
   final articles = ref.watch(tousArticlesProvider).valueOrNull ?? [];
   final valeur = articles.fold<int>(0, (sum, a) => sum + a.stock * a.prixAchat);
-  final alertes = articles.where((a) => a.stock <= a.stockMin).length;
+  final alertes = articles.where(stockEnAlerte).length;
   final periode = ref.watch(periodeRapportProvider);
   final mouvements = ref.watch(tousMouvementsProvider).valueOrNull ?? [];
   final nbMouvements = mouvements.where((m) {

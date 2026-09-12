@@ -153,9 +153,10 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
         _stockCtrl.text = article.stock.toString();
         _stockMinCtrl.text = article.stockMin.toString();
         _fournisseurCtrl.text = article.fournisseur;
-        _longueurCtrl.text = article.longueur?.toString() ?? '';
+        _longueurCtrl.text =
+            article.longueur == null ? '' : fmtDecimal(article.longueur!);
         _epaisseurCtrl.text =
-            article.epaisseur > 0 ? article.epaisseur.toString() : '';
+            article.epaisseur > 0 ? fmtDecimal(article.epaisseur) : '';
         _provenance = article.provenance.isNotEmpty && provenances.contains(article.provenance)
             ? article.provenance
             : provenances.first;
@@ -522,11 +523,13 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
           livraison && f!.quartier.isNotEmpty ? f.quartier : null,
     );
 
-    await stores.upsert('mouvement', mouvement);
     // Le stock local prend sa valeur d'ouverture tout de suite : l'application
     // sert d'abord hors ligne, et un article créé avec cinquante barres qui en
-    // affiche zéro serait recréé.
-    await stores.upsert('article', article.copyWith(stock: quantite));
+    // affiche zéro serait recréé. Mouvement et stock dans une transaction.
+    await stores.transaction(() async {
+      await stores.upsert('mouvement', mouvement);
+      await stores.upsert('article', article.copyWith(stock: quantite));
+    });
     await opQueue.enqueue('mouvement', {'mouvement': mouvement.toJson()});
   }
 
@@ -618,8 +621,8 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
       stockMin: parseMontantClean(_stockMinCtrl.text),
       fournisseur: _fournisseurCtrl.text.trim(),
       photo: _photoBase64 ?? '',
-      longueur: double.tryParse(_longueurCtrl.text),
-      epaisseur: double.tryParse(_epaisseurCtrl.text) ?? 0,
+      longueur: parseDecimal(_longueurCtrl.text),
+      epaisseur: parseDecimal(_epaisseurCtrl.text) ?? 0,
       provenance: _provenance,
     );
 

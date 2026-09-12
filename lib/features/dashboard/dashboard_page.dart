@@ -125,10 +125,10 @@ final facturesImpayeesProvider =
   return (nombre: impayees.length, resteTotal: resteTotal);
 });
 
-/// Articles en alerte (stock <= stockMin)
+/// Articles en alerte : rupture ou stock faible, selon `stockStatut`.
 final articlesAlerteProvider = Provider<List<Article>>((ref) {
   final articles = ref.watch(tousArticlesProvider).valueOrNull ?? [];
-  return articles.where((a) => a.stock <= a.stockMin).toList();
+  return articles.where(stockEnAlerte).toList();
 });
 
 /// 5 dernières ventes

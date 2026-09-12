@@ -74,9 +74,9 @@ String construireContexte(DonneesMagasin d, String docOutils, String docActions)
       .map((a) => '${a.nom}: ${a.qte} unités, ${gnfCompact(a.ca)}')
       .toList();
 
-  final enRupture = d.articles.where((a) => a.stock == 0).length;
-  final faible =
-      d.articles.where((a) => a.stock > 0 && a.stock < a.stockMin).length;
+  final enRupture =
+      d.articles.where((a) => stockStatut(a) == 'rupture').length;
+  final faible = d.articles.where((a) => stockStatut(a) == 'faible').length;
   final impayees = d.factures.where((f) => resteDu(f) > 0).toList();
   final aPayer =
       d.depenses.where((x) => x.montant - montantRegle(x) > 0).toList();

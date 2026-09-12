@@ -128,17 +128,22 @@ class _AjustementSheetState extends ConsumerState<AjustementSheet> {
 
       // Écriture locale d'abord, comme pour un achat : l'application sert hors
       // ligne, et un stock corrigé qui ne bouge pas à l'écran serait recorrigé.
-      await stores.upsert('mouvement', mouvement);
-      final frais = await stores.getArticle(widget.article.id);
-      if (frais != null) {
-        await stores.upsert(
-          'article',
-          frais.copyWith(
-            stock: stockApresMouvement(
-                frais.stock, mouvement.type, mouvement.quantite),
-          ),
-        );
-      }
+      //
+      // Mouvement et stock dans UNE transaction : un mouvement enregistré
+      // sans son effet sur l'article ferait mentir le journal.
+      await stores.transaction(() async {
+        await stores.upsert('mouvement', mouvement);
+        final frais = await stores.getArticle(widget.article.id);
+        if (frais != null) {
+          await stores.upsert(
+            'article',
+            frais.copyWith(
+              stock: stockApresMouvement(
+                  frais.stock, mouvement.type, mouvement.quantite),
+            ),
+          );
+        }
+      });
 
       await opQueue.enqueue('mouvement', {'mouvement': mouvement.toJson()});
       if (!mounted) return;

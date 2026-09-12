@@ -198,11 +198,19 @@ class _ModifierVentePageState extends ConsumerState<ModifierVentePage> {
       return;
     }
     setState(() {
-      _panier.add(LignePanier(
-        id: _uuid.v4(),
-        article: article,
-        prixUnitaire: article.prixVente,
-      ));
+      // Un article déjà au panier se cumule sur sa ligne : une seule ligne
+      // par article, comme à la création d'une vente.
+      final existante =
+          _panier.where((l) => l.article.id == article.id).firstOrNull;
+      if (existante != null) {
+        existante.quantite += 1;
+      } else {
+        _panier.add(LignePanier(
+          id: _uuid.v4(),
+          article: article,
+          prixUnitaire: article.prixVente,
+        ));
+      }
       _articleController.clear();
       _articleQuery = '';
     });

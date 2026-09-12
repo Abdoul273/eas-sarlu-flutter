@@ -16,6 +16,27 @@ int parseMontantClean(String? input) {
   return int.tryParse(clean) ?? 0;
 }
 
+/// Lit un nombre décimal saisi par l'utilisateur, virgule ou point acceptés.
+///
+/// Le clavier numérique d'Android en français propose la VIRGULE : une
+/// épaisseur tapée « 0,45 » passait par `double.tryParse` et devenait zéro,
+/// une longueur « 6,5 » disparaissait. Rend `null` si rien de lisible.
+double? parseDecimal(String? input) {
+  if (input == null) return null;
+  final clean = input.replaceAll(RegExp(r'\s'), '').replaceAll(',', '.');
+  if (clean.isEmpty) return null;
+  final v = double.tryParse(clean);
+  return v == null || !v.isFinite ? null : v;
+}
+
+/// Un décimal tel qu'on le montre dans un champ ou une fiche : « 3 » et non
+/// « 3.0 », « 0,45 » et non « 0.45 ».
+String fmtDecimal(double v, {int decimales = 2}) {
+  if (v == v.roundToDouble()) return v.round().toString();
+  var t = v.toStringAsFixed(decimales);
+  t = t.replaceFirst(RegExp(r'0+$'), '').replaceFirst(RegExp(r'\.$'), '');
+  return t.replaceAll('.', ',');
+}
 
 String fmtDate(DateTime date) {
   return DateFormat.yMMMMd('fr_FR').format(date); // 29 juillet 2026
@@ -107,17 +128,25 @@ String _sousCent(int n) {
   if (n < 20) return _unites[n];
   final d = n ~/ 10, u = n % 10;
   // 70 et 90 se disent « soixante-dix » et « quatre-vingt-dix » : on repart de
-  // la dizaine inférieure et on compte jusqu'à 19.
+  // la dizaine inférieure et on compte jusqu'à 19. Et 71 fait « soixante et
+  // onze », comme 21 fait « vingt et un » — 91 seul reste sans « et ».
+  if (d == 7 && u == 1) return 'soixante et onze';
   if (d == 7 || d == 9) return '${_dizaines[d]}-${_unites[10 + u]}';
   if (u == 0) return d == 8 ? 'quatre-vingts' : _dizaines[d];
   if (u == 1 && d != 8) return '${_dizaines[d]} et un';
   return '${_dizaines[d]}-${_unites[u]}';
 }
 
-String _sousMille(int n) {
+/// [devantMille] : « cent » ne prend pas de s quand « mille » le suit
+/// (« trois cent mille »), alors qu'il le prend devant « millions » ou en fin
+/// de nombre, qui sont des noms (« deux cents millions », « deux cents »).
+String _sousMille(int n, {bool devantMille = false}) {
   final c = n ~/ 100, r = n % 100;
   if (c == 0) return _sousCent(r);
-  if (r == 0) return c == 1 ? 'cent' : '${_unites[c]} cents';
+  if (r == 0) {
+    if (c == 1) return 'cent';
+    return devantMille ? '${_unites[c]} cent' : '${_unites[c]} cents';
+  }
   final tete = c == 1 ? 'cent' : '${_unites[c]} cent';
   return '$tete ${_sousCent(r)}';
 }
@@ -143,7 +172,11 @@ String montantEnLettres(num montant) {
     v -= q * poids;
     // « mille » ne prend jamais de s et ne se dit pas « un mille ».
     if (poids == 1000) {
-      morceaux.add(q == 1 ? 'mille' : '${_sousMille(q)} mille');
+      // « quatre-vingt mille » : comme « cent », « vingt » reste invariable
+      // devant « mille ».
+      final tete = _sousMille(q, devantMille: true)
+          .replaceFirst(RegExp(r'quatre-vingts$'), 'quatre-vingt');
+      morceaux.add(q == 1 ? 'mille' : '$tete mille');
     } else {
       morceaux.add('${_sousMille(q)} ${q == 1 ? t[1] : t[2]}');
     }

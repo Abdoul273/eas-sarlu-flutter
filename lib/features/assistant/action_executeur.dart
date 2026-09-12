@@ -135,16 +135,13 @@ class ExecuteurActions {
     // Écriture locale AVANT l'envoi, comme la feuille de mouvement : sans
     // cela, le stock annoncé par l'assistant ne bougeait à l'écran qu'à la
     // synchronisation suivante, et hors ligne, jamais.
-    await _stores.upsert('mouvement', mouvement);
-    await _stores.upsert(
-      'article',
-      article.copyWith(
-        stock: stockApresMouvement(article.stock, type, mouvement.quantite),
-      ),
-    );
+    final apres = stockApresMouvement(article.stock, type, mouvement.quantite);
+    await _stores.transaction(() async {
+      await _stores.upsert('mouvement', mouvement);
+      await _stores.upsert('article', article.copyWith(stock: apres));
+    });
     await _queue.enqueue('mouvement', {'mouvement': mouvement.toJson()});
 
-    final apres = stockApresMouvement(article.stock, type, mouvement.quantite);
     return ResultatAction(
         '${article.nom} : ${type == 'entrée' ? '+' : '−'}${fmtNombre(q)} '
         '${article.unite} (stock ${fmtNombre(article.stock)} → '
@@ -167,6 +164,8 @@ class ExecuteurActions {
 
     final categorie =
         _txt(p['categorie']).isEmpty ? 'Divers' : _txt(p['categorie']);
+    final stockInitial =
+        (_num(p['stockInitial'] ?? p['stock']) ?? 0).round().clamp(0, 1 << 30);
     final article = Article(
       id: const Uuid().v4(),
       ref: _txt(p['ref']).isEmpty
@@ -178,14 +177,42 @@ class ExecuteurActions {
       unite: _txt(p['unite']).isEmpty ? 'unité' : _txt(p['unite']),
       prixAchat: (_num(p['prixAchat']) ?? 0).round(),
       prixVente: (_num(p['prixVente']) ?? 0).round(),
-      stock: (_num(p['stockInitial'] ?? p['stock']) ?? 0).round(),
+      // L'article NAÎT À ZÉRO : c'est le mouvement d'ouverture ci-dessous qui
+      // pose le stock, daté et attribué, exactement comme le fait la fiche
+      // article. Écrire la quantité ici la laisserait sans trace au journal
+      // — et le rejeu local d'une écriture d'article ne conserve pas le
+      // stock qu'elle transporte.
+      stock: 0,
       stockMin: (_num(p['stockMin']) ?? 5).round(),
       fournisseur: _txt(p['fournisseur']),
     );
 
     await _stores.upsert('article', article);
     await _queue.enqueue('article', {'record': article.toJson()});
-    return ResultatAction('Article créé : ${article.nom} [${article.ref}]');
+
+    if (stockInitial > 0) {
+      final ouverture = MouvementStock(
+        id: const Uuid().v4(),
+        articleId: article.id,
+        type: 'ajustement',
+        quantite: stockInitial,
+        quantiteAvant: 0,
+        quantiteApres: stockInitial,
+        date: DateTime.now().toIso8601String(),
+        utilisateur: _nomUtilisateur,
+        note: 'Stock déjà en magasin à la création de l\'article',
+      );
+      // Déposé APRÈS l'article : le serveur refuse un mouvement sur un
+      // article qu'il ne connaît pas encore, et la file part dans l'ordre.
+      await _stores.transaction(() async {
+        await _stores.upsert('mouvement', ouverture);
+        await _stores.upsert('article', article.copyWith(stock: stockInitial));
+      });
+      await _queue.enqueue('mouvement', {'mouvement': ouverture.toJson()});
+    }
+    return ResultatAction(
+        'Article créé : ${article.nom} [${article.ref}]'
+        '${stockInitial > 0 ? ', stock ${fmtNombre(stockInitial)} ${article.unite}' : ''}');
   }
 
   Future<ResultatAction> _modifierArticle(Map<String, dynamic> p) async {

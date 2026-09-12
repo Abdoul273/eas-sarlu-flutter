@@ -391,11 +391,20 @@ int margeVente(Vente v, Map<String, Article> articlesParId) =>
 
 /// État du stock d'un article. Un stock négatif — que seul un ajustement
 /// erroné peut produire — est une rupture : il n'y a rien à vendre.
+///
+/// « Faible » dès que le stock ATTEINT le seuil : le minimum est la quantité
+/// en dessous de laquelle on ne veut pas descendre, donc y arriver est déjà
+/// le moment de commander. C'est la SEULE règle ; les écrans qui comparaient
+/// chacun à leur façon (`<` ici, `<=` là) annonçaient des nombres d'alertes
+/// différents pour le même dépôt.
 String stockStatut(Article a) {
   if (a.stock <= 0) return 'rupture';
-  if (a.stock < a.stockMin) return 'faible';
+  if (a.stockMin > 0 && a.stock <= a.stockMin) return 'faible';
   return 'en-stock';
 }
+
+/// L'article est-il à surveiller (rupture ou stock faible) ?
+bool stockEnAlerte(Article a) => stockStatut(a) != 'en-stock';
 
 /// Ce que devient le stock d'un article après un mouvement.
 ///

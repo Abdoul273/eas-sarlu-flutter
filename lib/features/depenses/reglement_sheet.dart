@@ -26,7 +26,7 @@ class _ReglementSheetState extends ConsumerState<ReglementSheet> {
   @override
   void initState() {
     super.initState();
-    final reste = widget.depense.montant - montantRegle(widget.depense);
+    final reste = resteAPayer(widget.depense);
     _montantCtrl = TextEditingController(
         text: reste > 0 ? fmtNombre(reste) : '');
     _noteCtrl = TextEditingController();
@@ -40,38 +40,59 @@ class _ReglementSheetState extends ConsumerState<ReglementSheet> {
   }
 
   Future<void> _valider() async {
+    if (_isSubmitting) return;
     final montantSaisi = parseMontantClean(_montantCtrl.text);
-    final reste = widget.depense.montant - montantRegle(widget.depense);
-    if (montantSaisi <= 0 || montantSaisi > reste) {
+    if (montantSaisi <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Montant invalide ou supérieur au reste à régler')));
+          const SnackBar(content: Text('Saisissez un montant supérieur à zéro')));
       return;
     }
 
     setState(() => _isSubmitting = true);
 
-    final reglement = Reglement(
-      id: const Uuid().v4(),
-      date: DateTime.now().toIso8601String(),
-      montant: montantSaisi,
-      mode: _mode,
-      note: _noteCtrl.text.trim(),
-      utilisateur: ref.read(utilisateurActuelProvider)?.nom ?? 'Utilisateur',
-    );
-
     try {
       final stores = ref.read(storesProvider);
       final opQueue = ref.read(opQueueProvider);
 
+      // Dépense RELUE au moment de valider : même règle que pour un versement
+      // client — un règlement passé entre temps ne doit pas être ignoré.
+      final depense =
+          await stores.getDepense(widget.depense.id) ?? widget.depense;
+      final reste = resteAPayer(depense);
+      if (reste <= 0) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Cette dépense est déjà réglée')));
+        Navigator.pop(context, false);
+        return;
+      }
+      if (montantSaisi > reste) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content:
+                Text('Le règlement dépasse le reste à payer (${fmtGNF(reste)})')));
+        return;
+      }
+
+      final reglement = Reglement(
+        id: const Uuid().v4(),
+        date: DateTime.now().toIso8601String(),
+        montant: montantSaisi,
+        mode: _mode,
+        note: _noteCtrl.text.trim(),
+        utilisateur:
+            ref.read(utilisateurActuelProvider)?.nom ?? 'Utilisateur',
+      );
+
       // Ajout local optimiste. `reglements` peut être une liste constante
       // (dépense sans règlement) : on recrée la dépense au lieu de muter la
       // liste en place.
-      await stores.upsert('depense', widget.depense.avecReglement(reglement));
+      await stores.upsert('depense', depense.avecReglement(reglement));
 
       await opQueue.enqueue('depense_reglement', {
-        'depenseId': widget.depense.id,
+        'depenseId': depense.id,
         'reglement': reglement.toJson(),
-        'baseRev': widget.depense.rev,
+        if (depense.rev != null) 'baseRev': depense.rev,
       });
 
       if (!mounted) return;
@@ -87,7 +108,7 @@ class _ReglementSheetState extends ConsumerState<ReglementSheet> {
 
   @override
   Widget build(BuildContext context) {
-    final reste = widget.depense.montant - montantRegle(widget.depense);
+    final reste = resteAPayer(widget.depense);
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final bottomInset = MediaQuery.of(context).viewInsets.bottom;

@@ -111,8 +111,9 @@ class ArticleDetailPage extends ConsumerWidget {
             );
           }
 
-          final isRupture = article.stock <= 0;
-          final isStockBas = article.stock <= article.stockMin && !isRupture;
+          final statutStock = stockStatut(article);
+          final isRupture = statutStock == 'rupture';
+          final isStockBas = statutStock == 'faible';
           final margeAbs = article.prixVente - article.prixAchat;
           final pctMarge = article.prixAchat > 0
               ? ((margeAbs / article.prixAchat) * 100).round()
