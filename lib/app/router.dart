@@ -31,6 +31,42 @@ import '../features/ventes/ventes_page.dart';
 import '../shell/app_shell.dart';
 import '../core/models/models.dart';
 
+/// Les six onglets du shell : la barre du bas et le tiroir y mènent par `go`,
+/// qui REMPLACE la pile — on change d'onglet, on ne s'empile pas.
+const Set<String> kOngletsShell = {
+  'accueil', 'ventes', 'stock', 'factures', 'clients', 'fournisseurs',
+};
+
+/// Ouvre une destination nommée en respectant sa nature.
+///
+/// Un onglet se rejoint par `go`. Tout le reste — Dépenses, Finances,
+/// Rapports, Calculateur, Assistant, Paramètres, Activité, Bons — est une page
+/// qui se POUSSE par-dessus l'onglet courant : « retour » y ramène. Ces pages
+/// étaient ouvertes par `go`, qui vidait la pile ; leur bouton retour n'avait
+/// plus rien à dépiler et renvoyait à l'accueil, d'où que l'on vienne.
+///
+/// Si la page demandée est déjà celle du dessus, on ne l'empile pas une
+/// seconde fois.
+void ouvrirRoute(BuildContext context, String nom,
+    {Map<String, String> pathParameters = const {},
+    Map<String, dynamic> queryParameters = const {},
+    Object? extra}) {
+  if (kOngletsShell.contains(nom)) {
+    context.goNamed(nom,
+        pathParameters: pathParameters, queryParameters: queryParameters);
+    return;
+  }
+  // Lu sur le routeur et non par `GoRouterState.of` : le tiroir appelle
+  // ceci depuis le contexte du Navigator, qui n'est sous aucune route.
+  final config = GoRouter.of(context).routerDelegate.currentConfiguration;
+  final route = config.isEmpty ? null : config.last.route;
+  if (route is GoRoute && route.name == nom) return;
+  context.pushNamed(nom,
+      pathParameters: pathParameters,
+      queryParameters: queryParameters,
+      extra: extra);
+}
+
 class RouterRefreshListenable extends ChangeNotifier {
   RouterRefreshListenable(Ref ref) {
     ref.listen(authStateProvider, (_, __) => notifyListeners());

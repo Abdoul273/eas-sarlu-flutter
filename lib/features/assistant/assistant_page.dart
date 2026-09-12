@@ -10,6 +10,7 @@ import 'package:go_router/go_router.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../../app/router.dart' show ouvrirRoute;
 import '../../app/theme.dart';
 import '../../app/ui_kit.dart';
 import '../../core/auth/auth_state.dart';
@@ -556,7 +557,7 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
 
     if (pageAOuvrir != null && pageAOuvrir.isNotEmpty && mounted) {
       final chemin = pageAOuvrir == 'dashboard' ? 'accueil' : pageAOuvrir;
-      context.goNamed(chemin);
+      ouvrirRoute(context, chemin);
     }
   }
 

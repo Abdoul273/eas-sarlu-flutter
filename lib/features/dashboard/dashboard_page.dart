@@ -14,6 +14,8 @@ import '../ventes/ventes_page.dart' show clientMapProvider;
 import '../depenses/depenses_page.dart' show toutesDepensesProvider;
 import 'package:go_router/go_router.dart';
 
+import '../../app/router.dart' show ouvrirRoute;
+
 /// Abrège un montant pour l'axe du graphique : « 1,2 M » plutôt que
 /// « 1 200 000 », qui ne tient pas dans la marge réservée.
 String _abregerMontant(double valeur) {
@@ -435,7 +437,7 @@ class _DashboardPageState extends ConsumerState<DashboardPage> {
         couleurValeur: valeur < 0
             ? context.metier.danger
             : context.metier.succes,
-        onTap: () => context.goNamed('finances'),
+        onTap: () => ouvrirRoute(context, 'finances'),
       ),
     );
   }

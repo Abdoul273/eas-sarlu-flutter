@@ -4,7 +4,8 @@
 // destinations principales et secondaires avec le design de marque.
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:go_router/go_router.dart';
+
+import '../app/router.dart' show ouvrirRoute;
 
 import '../app/theme.dart';
 import '../app/ui_kit.dart';
@@ -246,8 +247,11 @@ class NavPanel extends ConsumerWidget {
   }
 
   void _naviguer(BuildContext context, String routeName) {
+    // Le tiroir se ferme d'abord, puis on navigue depuis le contexte du
+    // shell : c'est lui qui connaît la route courante.
+    final shell = Navigator.of(context).context;
     Navigator.of(context).pop();
-    context.goNamed(routeName);
+    ouvrirRoute(shell, routeName);
   }
 }
 
@@ -601,8 +605,9 @@ class _PiedPanneau extends ConsumerWidget {
                 ),
                 actif: routeActive.startsWith('/parametres'),
                 onTap: () {
+                  final shell = Navigator.of(context).context;
                   Navigator.of(context).pop();
-                  context.goNamed('parametres');
+                  ouvrirRoute(shell, 'parametres');
                 },
               ),
               const SizedBox(height: 2),

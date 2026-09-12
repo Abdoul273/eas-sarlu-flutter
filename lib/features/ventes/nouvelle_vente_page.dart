@@ -372,7 +372,10 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
             icon: Icons.receipt_long_rounded,
             onPressed: () {
               Navigator.pop(ctx);
-              context.pushNamed('detail-facture',
+              // On REMPLACE la page de vente par la facture : revenir en
+              // arrière ramenait sur un panier encore plein, prêt à être
+              // encaissé une seconde fois.
+              context.pushReplacementNamed('detail-facture',
                   pathParameters: {'id': factureId});
             },
           ),
