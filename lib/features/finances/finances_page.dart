@@ -130,6 +130,12 @@ class _FinancesPageState extends ConsumerState<FinancesPage> {
         ref.watch(utilisateurActuelProvider)?.voitPrixAchat ?? false;
 
     final bilan = ref.watch(bilanPeriodeProvider);
+    // Le prix d'achat est figé sur chaque ligne depuis septembre 2026 ; les
+    // ventes plus anciennes sont estimées au prix courant, et on le dit
+    // seulement quand il y en a dans la période.
+    final estime = (ref.watch(toutesVentesProvider).valueOrNull ?? const [])
+        .where((v) => dansPeriode(v.date, periode.periode))
+        .any(venteAuCoutEstime);
     final caTotal = bilan.chiffreAffaires;
     final encaissements = bilan.encaissements;
     final coutAchat = bilan.coutMarchandises;
@@ -272,7 +278,9 @@ class _FinancesPageState extends ConsumerState<FinancesPage> {
                       ),
                       _LigneCompte(
                         libelle: 'Coût des marchandises vendues',
-                        detail: "au prix d'achat actuel — estimation",
+                        detail: estime
+                            ? "en partie estimé au prix d'achat actuel"
+                            : "au prix d'achat du jour de chaque vente",
                         montant: -coutAchat,
                       ),
                       const Divider(height: Espace.lg),
@@ -299,13 +307,15 @@ class _FinancesPageState extends ConsumerState<FinancesPage> {
                     ],
                   ),
                 ),
-                const SizedBox(height: Espace.xs),
-                const _NoteExplicative(
-                  'Le coût des marchandises vendues est estimé au prix d\'achat '
-                  'ACTUEL de chaque article : faute de prix historisé ligne à '
-                  'ligne, une marge calculée sur un prix qui a bougé depuis la '
-                  'vente serait fausse sans qu\'on le dise.',
-                ),
+                if (estime) ...[
+                  const SizedBox(height: Espace.xs),
+                  const _NoteExplicative(
+                    'Certaines ventes de la période sont antérieures à la '
+                    'mémorisation du prix d\'achat : leur coût est estimé au '
+                    'prix d\'achat ACTUEL de l\'article. Les ventes récentes '
+                    'portent le prix du jour où elles ont été faites.',
+                  ),
+                ],
                 const SizedBox(height: Espace.xl),
               ],
 

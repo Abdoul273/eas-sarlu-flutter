@@ -273,6 +273,14 @@ class LigneVente {
   final double remise;
   final int total;
 
+  /// Le prix d'achat unitaire de l'article AU MOMENT de la vente.
+  ///
+  /// Figé ici, comme `prixUnitaire` : la marge d'une vente de mars ne doit pas
+  /// changer parce que le fer a augmenté en juin. `null` sur les ventes
+  /// antérieures à ce champ — le calcul retombe alors sur le prix d'achat
+  /// courant de l'article, et le dit.
+  final int? prixAchat;
+
   LigneVente({
     required this.articleId,
     this.articleRef = '',
@@ -282,9 +290,11 @@ class LigneVente {
     required this.prixUnitaire,
     this.remise = 0,
     this.total = 0,
+    this.prixAchat,
   });
 
   factory LigneVente.fromJson(Map<String, dynamic> json) {
+    final pa = json['prixAchat'];
     return LigneVente(
       articleId: json['articleId'] as String? ?? '',
       articleRef: json['articleRef'] as String? ?? '',
@@ -294,6 +304,7 @@ class LigneVente {
       prixUnitaire: _entier(json['prixUnitaire']),
       remise: borneRemise(json['remise'] as num?),
       total: _entier(json['total']),
+      prixAchat: pa is num ? pa.round() : null,
     );
   }
 
@@ -307,8 +318,14 @@ class LigneVente {
       'prixUnitaire': prixUnitaire,
       'remise': remise,
       'total': total,
+      if (prixAchat != null) 'prixAchat': prixAchat,
     };
   }
+
+  /// Ce que la ligne a coûté au magasin : le prix d'achat figé, ou à défaut
+  /// le prix courant de l'article. UNE seule règle, pour que le rapport,
+  /// l'assistant et le compte de résultat annoncent la même marge.
+  int coutAchat(Article? article) => (prixAchat ?? article?.prixAchat ?? 0) * qte;
 }
 
 class Vente {

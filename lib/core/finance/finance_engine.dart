@@ -371,15 +371,19 @@ bool depenseEnRetard(Depense d, [DateTime? maintenant]) {
 
 /// Coût d'achat des marchandises vendues sur une vente (le « CAMV »).
 ///
-/// Il est estimé au prix d'achat ACTUEL de chaque article, faute d'un prix
-/// d'achat historisé ligne à ligne. C'est une approximation, et elle est
-/// annoncée comme telle dans l'interface : une marge calculée sur un prix
-/// d'achat qui a bougé depuis la vente serait fausse sans qu'on le dise.
+/// Au prix d'achat FIGÉ sur chaque ligne au moment de la vente. Les ventes
+/// antérieures à ce champ retombent sur le prix d'achat actuel de l'article :
+/// une approximation, annoncée comme telle par [venteAuCoutEstime].
 ///
-/// Une ligne dont l'article a été supprimé du catalogue compte pour zéro : on
-/// préfère une marge trop belle mais explicable à un coût inventé.
+/// Une ligne dont l'article a été supprimé du catalogue, sans prix figé,
+/// compte pour zéro : on préfère une marge trop belle mais explicable à un
+/// coût inventé.
 int coutAchatVente(Vente v, Map<String, Article> articlesParId) => v.lignes
-    .fold<int>(0, (s, l) => s + (articlesParId[l.articleId]?.prixAchat ?? 0) * l.qte);
+    .fold<int>(0, (s, l) => s + l.coutAchat(articlesParId[l.articleId]));
+
+/// Vrai si au moins une ligne n'a pas de prix d'achat figé : la marge est
+/// alors estimée au prix courant, et l'écran doit le dire.
+bool venteAuCoutEstime(Vente v) => v.lignes.any((l) => l.prixAchat == null);
 
 /// Marge brute d'une vente : ce qu'elle rapporte, coût d'achat déduit.
 int margeVente(Vente v, Map<String, Article> articlesParId) =>

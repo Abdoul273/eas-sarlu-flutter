@@ -237,6 +237,9 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
               prixUnitaire: l.prixUnitaire,
               remise: 0,
               total: l.total,
+              // Figé maintenant : la marge de cette vente ne bougera plus
+              // quand le fournisseur changera ses prix.
+              prixAchat: l.article.prixAchat,
             ))
         .toList();
 

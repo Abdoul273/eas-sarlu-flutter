@@ -272,6 +272,13 @@ class _ModifierVentePageState extends ConsumerState<ModifierVentePage> {
               prixUnitaire: l.prixUnitaire,
               remise: 0,
               total: l.total,
+              // Une ligne conservée garde son prix d'achat d'origine ; une
+              // ligne ajoutée prend celui du jour.
+              prixAchat: widget.venteInitiale.lignes
+                      .where((o) => o.articleId == l.article.id)
+                      .firstOrNull
+                      ?.prixAchat ??
+                  l.article.prixAchat,
             ))
         .toList();
 

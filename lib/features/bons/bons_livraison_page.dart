@@ -587,6 +587,7 @@ class _BonDetailSheetState extends ConsumerState<_BonDetailSheet> {
           prixUnitaire: l.prixUnitaire,
           remise: l.remise,
           total: l.total,
+          prixAchat: l.prixAchat,
           qte: _quantites[i],
         ));
       }

@@ -365,7 +365,7 @@ RapportComplet construireRapport({
       e.qte += l.qte;
       e.chiffreAffaires += l.total;
       if (e.marge != null) {
-        e.marge = e.marge! + l.total - (a?.prixAchat ?? 0) * l.qte;
+        e.marge = e.marge! + l.total - l.coutAchat(a);
       }
     }
   }

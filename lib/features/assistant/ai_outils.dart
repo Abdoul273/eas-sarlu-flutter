@@ -452,7 +452,7 @@ final _rentabiliteArticles = OutilIA(
           art: e.art,
           qte: e.qte + li.qte,
           ca: e.ca + li.total,
-          marge: e.marge + li.total - e.art.prixAchat * li.qte,
+          marge: e.marge + li.total - li.coutAchat(e.art),
         );
       }
     }
@@ -539,6 +539,7 @@ final _ficheArticle = OutilIA(
       ];
       final qteTotale = lignes.fold<int>(0, (s, x) => s + x.l.qte);
       final caTotal = lignes.fold<int>(0, (s, x) => s + x.l.total);
+      final coutTotal = lignes.fold<int>(0, (s, x) => s + x.l.coutAchat(a));
       final dates = lignes.map((x) => x.v.date).toList()..sort();
       final joursActifs =
           dates.isEmpty ? 0 : math.max(1, _joursDepuis(dates.first));
@@ -565,7 +566,7 @@ final _ficheArticle = OutilIA(
         if (d.voitPrixAchat)
           'Trésorerie immobilisée dans cet article : ${gnfCompact(a.prixAchat * a.stock)}',
         'Historique : ${fmtNombre(qteTotale)} ${a.unite} vendus au total, CA ${gnfCompact(caTotal)}'
-            '${d.voitPrixAchat ? ', marge ${gnfCompact(caTotal - a.prixAchat * qteTotale)}' : ''}',
+            '${d.voitPrixAchat ? ', marge ${gnfCompact(caTotal - coutTotal)}' : ''}',
         parJour > 0
             ? 'Rythme : ${parJour.toStringAsFixed(2)} ${a.unite}/jour sur $joursActifs jours '
                 '→ ${(a.stock / parJour).round()} jours de stock restants'
