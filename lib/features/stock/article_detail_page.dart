@@ -115,9 +115,7 @@ class ArticleDetailPage extends ConsumerWidget {
           final isRupture = statutStock == 'rupture';
           final isStockBas = statutStock == 'faible';
           final margeAbs = article.prixVente - article.prixAchat;
-          final pctMarge = article.prixAchat > 0
-              ? ((margeAbs / article.prixAchat) * 100).round()
-              : 0;
+          final pctMarge = tauxMargeArticle(article)?.round() ?? 0;
 
           return SingleChildScrollView(
             physics: const BouncingScrollPhysics(),
@@ -628,8 +626,11 @@ class ArticleDetailPage extends ConsumerWidget {
                 child: StatTile(
                   libelle: 'Marge estimée',
                   valeur: fmtGNF(margeAbs),
-                  sousTitre:
-                      pctMarge > 0 ? '+$pctMarge% de marge' : 'Taux zéro',
+                  sousTitre: switch (pctMarge) {
+                    > 0 => '+$pctMarge % du prix de vente',
+                    < 0 => '$pctMarge % : vente à perte',
+                    _ => 'Taux zéro',
+                  },
                   icone: Icons.trending_up_rounded,
                   couleurValeur: margeAbs > 0 ? metier.succes : metier.danger,
                 ),

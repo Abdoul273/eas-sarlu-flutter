@@ -64,6 +64,12 @@ class _ClientFormSheetState extends ConsumerState<ClientFormSheet> {
       quartier: _quartierCtrl.text.trim(),
       ville: _villeCtrl.text.trim(),
       creeLe: widget.client?.creeLe ?? DateTime.now().toIso8601String(),
+      // La révision suit la fiche : sans elle, une seconde modification
+      // avant la synchronisation partait sans `baseRev`, et le serveur ne
+      // pouvait plus détecter qu'un collègue avait touché la même fiche.
+      rev: widget.client?.rev,
+      updatedAt: widget.client?.updatedAt,
+      updatedBy: widget.client?.updatedBy,
     );
 
     try {

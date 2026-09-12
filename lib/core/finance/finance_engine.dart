@@ -385,6 +385,15 @@ int coutAchatVente(Vente v, Map<String, Article> articlesParId) => v.lignes
 /// alors estimée au prix courant, et l'écran doit le dire.
 bool venteAuCoutEstime(Vente v) => v.lignes.any((l) => l.prixAchat == null);
 
+/// Taux de marge unitaire d'un article, en % du PRIX DE VENTE — la même
+/// définition que `Bilan.tauxMarge` (marge brute / chiffre d'affaires), pour
+/// qu'une fiche article et le compte de résultat parlent le même langage.
+/// La fiche article le calculait en % du prix d'achat : un article vendu
+/// 150 acheté 100 y affichait « +50 % » quand le bilan disait 33 %.
+/// `null` sans prix de vente.
+double? tauxMargeArticle(Article a) =>
+    a.prixVente > 0 ? (a.prixVente - a.prixAchat) / a.prixVente * 100 : null;
+
 /// Marge brute d'une vente : ce qu'elle rapporte, coût d'achat déduit.
 int margeVente(Vente v, Map<String, Article> articlesParId) =>
     v.totalNet - coutAchatVente(v, articlesParId);

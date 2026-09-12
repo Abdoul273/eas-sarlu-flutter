@@ -61,6 +61,10 @@ class _FournisseurFormSheetState extends ConsumerState<FournisseurFormSheet> {
       quartier: _quartierCtrl.text.trim(),
       ville: _villeCtrl.text.trim(),
       creeLe: widget.fournisseur?.creeLe ?? DateTime.now().toIso8601String(),
+      // Même règle que pour un client : la révision suit la fiche.
+      rev: widget.fournisseur?.rev,
+      updatedAt: widget.fournisseur?.updatedAt,
+      updatedBy: widget.fournisseur?.updatedBy,
     );
 
     try {

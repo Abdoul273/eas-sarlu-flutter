@@ -353,9 +353,13 @@ class _ModifierVentePageState extends ConsumerState<ModifierVentePage> {
       return;
     }
 
+    // Les lignes sont reconstruites sans remise, et le total est leur somme :
+    // une remise globale héritée d'une vente faite au navigateur ne doit pas
+    // rester écrite alors que le total ne l'applique plus.
     final venteMaj = widget.venteInitiale.copyWith(
       clientId: _clientSelectionne?.id ?? '',
       lignes: lignes,
+      remiseGlobale: 0,
       totalHT: totalNet,
       totalNet: totalNet,
     );
@@ -378,6 +382,7 @@ class _ModifierVentePageState extends ConsumerState<ModifierVentePage> {
             clientId: _clientSelectionne?.id ?? '',
             montantHT: totalNet,
             montantTTC: totalNet,
+            remise: 0,
           ),
         );
       }

@@ -632,7 +632,7 @@ class _BonDetailSheetState extends ConsumerState<_BonDetailSheet> {
           ),
           FilledButton(
             onPressed: () {
-              final val = int.tryParse(ctrl.text) ?? 0;
+              final val = parseMontantClean(ctrl.text);
               Navigator.pop(ctx, val.clamp(0, l.qte));
             },
             child: const Text('Valider'),

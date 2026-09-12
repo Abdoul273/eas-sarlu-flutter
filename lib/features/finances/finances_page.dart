@@ -52,19 +52,22 @@ final caParJourProvider = Provider<List<BarChartGroupData>>((ref) {
       .where((v) => dansPeriode(v.date, pIso))
       .toList();
 
-  final diff = periode.fin.difference(periode.debut).inDays + 1;
-  final Map<DateTime, int> caMap = {};
+  // Les jours sont indexés par leur date ISO « aaaa-mm-jj », exactement
+  // comme `dansPeriode` lit les ventes : une clé `DateTime` dépendait de
+  // l'heure et du fuseau de la chaîne, et une vente pouvait tomber à côté
+  // de sa barre.
+  final debut = DateTime(periode.debut.year, periode.debut.month, periode.debut.day);
+  final fin = DateTime(periode.fin.year, periode.fin.month, periode.fin.day);
+  final diff = fin.difference(debut).inDays + 1;
+  final Map<String, int> caMap = {};
   for (final vente in ventes) {
-    final date = DateTime.tryParse(vente.date);
-    if (date != null) {
-      final jour = DateTime(date.year, date.month, date.day);
-      caMap.update(jour, (val) => val + vente.totalNet,
-          ifAbsent: () => vente.totalNet);
-    }
+    if (vente.date.length < 10) continue;
+    caMap.update(vente.date.substring(0, 10), (val) => val + vente.totalNet,
+        ifAbsent: () => vente.totalNet);
   }
-  return List.generate(diff, (i) {
-    final jour = periode.debut.add(Duration(days: i));
-    final montant = caMap[jour] ?? 0;
+  return List.generate(diff < 1 ? 0 : diff, (i) {
+    final jour = DateTime(debut.year, debut.month, debut.day + i);
+    final montant = caMap[isoJour(jour)] ?? 0;
     return BarChartGroupData(
       x: i,
       barRods: [

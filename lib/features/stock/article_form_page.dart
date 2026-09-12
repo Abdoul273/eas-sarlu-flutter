@@ -624,6 +624,11 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
       longueur: parseDecimal(_longueurCtrl.text),
       epaisseur: parseDecimal(_epaisseurCtrl.text) ?? 0,
       provenance: _provenance,
+      // La révision suit la fiche, pour qu'une seconde modification avant la
+      // synchronisation parte encore avec un `baseRev`.
+      rev: existant?.rev,
+      updatedAt: existant?.updatedAt,
+      updatedBy: existant?.updatedBy,
     );
 
     try {
