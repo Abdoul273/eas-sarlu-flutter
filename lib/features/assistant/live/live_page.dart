@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -183,11 +184,24 @@ class _LivePageState extends ConsumerState<LivePage>
                       Expanded(
                         flex: _sousTitres && etat.lignes.isNotEmpty ? 5 : 8,
                         child: Center(
-                          child: _Orbe(
-                            horloge: _horloge,
-                            etat: etat,
-                            primaire: scheme.primary,
-                            secondaire: scheme.tertiary,
+                          child: GestureDetector(
+                            // Toucher l'orbe pendant qu'il parle le coupe :
+                            // plus sûr que d'élever la voix au comptoir.
+                            onTap: () => ref
+                                .read(liveControllerProvider.notifier)
+                                .interrompre(),
+                            child: _Orbe(
+                              horloge: _horloge,
+                              phase: etat.phase,
+                              niveauMicro: ref
+                                  .read(liveControllerProvider.notifier)
+                                  .niveauMicro,
+                              niveauVoix: ref
+                                  .read(liveControllerProvider.notifier)
+                                  .niveauVoix,
+                              primaire: scheme.primary,
+                              secondaire: scheme.tertiary,
+                            ),
                           ),
                         ),
                       ),
@@ -218,8 +232,12 @@ class _LivePageState extends ConsumerState<LivePage>
                     onMicro: () => ref
                         .read(liveControllerProvider.notifier)
                         .couperMicro(!etat.microCoupe),
-                    onSousTitres: () =>
-                        setState(() => _sousTitres = !_sousTitres),
+                    onSousTitres: () {
+                      setState(() => _sousTitres = !_sousTitres);
+                      ref
+                          .read(configLiveProvider.notifier)
+                          .activerSousTitres(_sousTitres);
+                    },
                     onClavier: () => setState(() => _clavierOuvert = true),
                     onFermer: _terminer,
                     onReessayer: () =>
@@ -346,12 +364,16 @@ class _PointVivantState extends State<_PointVivant>
 
 class _Orbe extends StatefulWidget {
   final AnimationController horloge;
-  final EtatLive etat;
+  final PhaseLive phase;
+  final ValueListenable<double> niveauMicro;
+  final ValueListenable<double> niveauVoix;
   final Color primaire;
   final Color secondaire;
   const _Orbe({
     required this.horloge,
-    required this.etat,
+    required this.phase,
+    required this.niveauMicro,
+    required this.niveauVoix,
     required this.primaire,
     required this.secondaire,
   });
@@ -361,38 +383,41 @@ class _Orbe extends StatefulWidget {
 }
 
 class _OrbeState extends State<_Orbe> {
-  // Les niveaux bruts sautent d'un bloc à l'autre ; on les lisse pour que
-  // l'orbe gonfle et dégonfle comme une respiration, pas comme un vu-mètre.
+  // Les niveaux bruts sautent d'un bloc à l'autre ; on les lisse à chaque
+  // image pour que l'orbe gonfle et dégonfle comme une respiration, pas
+  // comme un vu-mètre. Le lissage se fait ici, dans le rythme de l'horloge :
+  // aucun setState, aucune reconstruction de la page.
   double _niveau = 0;
 
   @override
   Widget build(BuildContext context) {
-    final etat = widget.etat;
-    final cible = switch (etat.phase) {
-      PhaseLive.parole => etat.niveauVoix,
-      PhaseLive.ecoute => etat.niveauMicro * 0.7,
-      _ => 0.0,
-    };
-    // Monte vite, redescend lentement.
-    _niveau = cible > _niveau
-        ? _niveau + (cible - _niveau) * 0.6
-        : _niveau + (cible - _niveau) * 0.15;
-
     final taille = math.min(MediaQuery.sizeOf(context).width * 0.62, 260.0);
 
     return AnimatedBuilder(
-      animation: widget.horloge,
-      builder: (context, _) => CustomPaint(
-        size: Size.square(taille * 1.6),
-        painter: _PeintreOrbe(
-          temps: widget.horloge.value,
-          niveau: _niveau,
-          phase: etat.phase,
-          primaire: widget.primaire,
-          secondaire: widget.secondaire,
-          rayonBase: taille / 2,
-        ),
-      ),
+      animation: Listenable.merge(
+          [widget.horloge, widget.niveauMicro, widget.niveauVoix]),
+      builder: (context, _) {
+        final cible = switch (widget.phase) {
+          PhaseLive.parole => widget.niveauVoix.value,
+          PhaseLive.ecoute => widget.niveauMicro.value * 0.7,
+          _ => 0.0,
+        };
+        // Monte vite, redescend lentement.
+        _niveau = cible > _niveau
+            ? _niveau + (cible - _niveau) * 0.5
+            : _niveau + (cible - _niveau) * 0.12;
+        return CustomPaint(
+          size: Size.square(taille * 1.6),
+          painter: _PeintreOrbe(
+            temps: widget.horloge.value,
+            niveau: _niveau,
+            phase: widget.phase,
+            primaire: widget.primaire,
+            secondaire: widget.secondaire,
+            rayonBase: taille / 2,
+          ),
+        );
+      },
     );
   }
 }
@@ -555,7 +580,7 @@ class _Statut extends StatelessWidget {
           ? ('Micro coupé', 'Touchez le micro pour reprendre')
           : ('Je vous écoute', 'Parlez naturellement'),
       PhaseLive.reflexion => ('Je regarde…', 'Consultation du magasin'),
-      PhaseLive.parole => ('', 'Coupez-moi quand vous voulez'),
+      PhaseLive.parole => ('', 'Touchez l\'orbe pour me couper'),
       PhaseLive.confirmation => ('À confirmer', 'Lisez la fiche à l\'écran'),
       PhaseLive.reconnexion => ('Reconnexion…', etat.message),
       PhaseLive.erreur => ('Impossible de continuer', etat.message),
@@ -704,9 +729,10 @@ class _BarreActions extends StatelessWidget {
           _Rond(
             icone: sousTitres
                 ? Icons.closed_caption_rounded
-                : Icons.closed_caption_off_rounded,
-            libelle: 'Sous-titres',
+                : Icons.closed_caption_disabled_rounded,
+            libelle: sousTitres ? 'Sous-titres' : 'Sans texte',
             actif: sousTitres,
+            accent: sousTitres,
             onTap: onSousTitres,
           ),
           _Rond(
@@ -741,6 +767,10 @@ class _Rond extends StatelessWidget {
   final bool alerte;
   final bool principal;
   final bool danger;
+
+  /// Réglage « allumé » : fond de la couleur de la marque, pour qu'on voie
+  /// qu'il l'est.
+  final bool accent;
   final VoidCallback? onTap;
 
   const _Rond({
@@ -750,6 +780,7 @@ class _Rond extends StatelessWidget {
     this.alerte = false,
     this.principal = false,
     this.danger = false,
+    this.accent = false,
     this.onTap,
   });
 
@@ -758,9 +789,13 @@ class _Rond extends StatelessWidget {
     final taille = principal ? 72.0 : 56.0;
     final Color fond;
     final Color encre;
+    final marque = Theme.of(context).colorScheme.primary;
     if (principal) {
       fond = danger ? const Color(0xFFEF4444) : Colors.white;
       encre = danger ? Colors.white : Colors.black87;
+    } else if (accent) {
+      fond = marque;
+      encre = Colors.white;
     } else if (alerte) {
       fond = const Color(0xFFEF4444).withValues(alpha: 0.22);
       encre = const Color(0xFFF87171);
@@ -789,9 +824,9 @@ class _Rond extends StatelessWidget {
         Text(
           libelle,
           style: TextStyle(
-            color: Colors.white.withValues(alpha: 0.55),
+            color: Colors.white.withValues(alpha: accent ? 0.95 : 0.55),
             fontSize: 11.5,
-            fontWeight: FontWeight.w500,
+            fontWeight: accent ? FontWeight.w700 : FontWeight.w500,
           ),
         ),
       ],

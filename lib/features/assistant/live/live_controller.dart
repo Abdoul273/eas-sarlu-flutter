@@ -61,12 +61,6 @@ class LigneLive {
 class EtatLive {
   final PhaseLive phase;
   final List<LigneLive> lignes;
-
-  /// Niveau du micro (0–1), pour faire respirer l'orbe quand on parle.
-  final double niveauMicro;
-
-  /// Niveau de la voix de l'assistant (0–1).
-  final double niveauVoix;
   final bool microCoupe;
   final String? message;
 
@@ -82,8 +76,6 @@ class EtatLive {
   const EtatLive({
     this.phase = PhaseLive.inactif,
     this.lignes = const [],
-    this.niveauMicro = 0,
-    this.niveauVoix = 0,
     this.microCoupe = false,
     this.message,
     this.modele,
@@ -97,8 +89,6 @@ class EtatLive {
   EtatLive copyWith({
     PhaseLive? phase,
     List<LigneLive>? lignes,
-    double? niveauMicro,
-    double? niveauVoix,
     bool? microCoupe,
     String? message,
     bool effacerMessage = false,
@@ -109,8 +99,6 @@ class EtatLive {
       EtatLive(
         phase: phase ?? this.phase,
         lignes: lignes ?? this.lignes,
-        niveauMicro: niveauMicro ?? this.niveauMicro,
-        niveauVoix: niveauVoix ?? this.niveauVoix,
         microCoupe: microCoupe ?? this.microCoupe,
         message: effacerMessage ? null : (message ?? this.message),
         modele: modele ?? this.modele,
@@ -145,19 +133,90 @@ class LiveController extends StateNotifier<EtatLive> {
   String _sortieEnCours = '';
   String _entreeEnCours = '';
 
+  /// Niveaux sonores (0–1), hors de l'état Riverpod : ils changent cinquante
+  /// fois par seconde, et redessiner toute la page à chaque fois faisait
+  /// hoqueter la lecture. L'orbe les écoute directement.
+  final niveauMicro = ValueNotifier<double>(0);
+  final niveauVoix = ValueNotifier<double>(0);
+
+  // ── Demi-duplex ──
+  // Rien ne part vers Gemini tant que l'assistant parle ou que son tour est
+  // en cours. Sans cela, le micro lui renvoie sa propre voix : son détecteur
+  // d'activité croit qu'on l'interrompt, il se tait, puis reprend — et l'on
+  // entend chaque mot deux fois. C'est la règle `hold_live_audio` d'ANO-GPT.
+
+  /// Le modèle est en train de produire (audio ou texte reçu, tour pas fini).
+  bool _tourModeleActif = false;
+
+  /// On a demandé l'interruption localement : l'audio qui arrive encore est
+  /// jeté jusqu'à ce que Gemini confirme (`interrupted`) ou finisse le tour.
+  bool _jeterAudio = false;
+
+  /// Blocs de micro consécutifs au-dessus du seuil de coupure.
+  int _blocsForts = 0;
+
+  /// Niveau de micro qui, tenu un instant pendant que l'assistant parle, vaut
+  /// interruption. Haut à dessein : l'écho résiduel après annulation reste
+  /// bien en dessous, une voix qui s'adresse au téléphone passe au-dessus.
+  static const double _seuilCoupure = 0.55;
+  static const int _blocsPourCouper = 6; // ≈ 150–250 ms selon le flux
+
   LiveController(this._ref) : super(const EtatLive()) {
     _hautParleur = HautParleurLive(
-      surNiveau: (n) {
-        if (!mounted) return;
-        state = state.copyWith(niveauVoix: n);
-      },
+      surNiveau: (n) => niveauVoix.value = n,
       surSilence: () {
         if (!mounted) return;
-        if (state.phase == PhaseLive.parole) {
-          state = state.copyWith(phase: PhaseLive.ecoute);
-        }
+        if (!_tourModeleActif) _reprendreEcoute();
       },
     );
+  }
+
+  bool get _retenirMicro =>
+      _hautParleur.enLecture || _tourModeleActif || state.phase == PhaseLive.confirmation;
+
+  void _reprendreEcoute() {
+    if (!mounted) return;
+    _jeterAudio = false;
+    _blocsForts = 0;
+    if (state.phase == PhaseLive.parole || state.phase == PhaseLive.reflexion) {
+      state = state.copyWith(phase: PhaseLive.ecoute);
+    }
+  }
+
+  /// Un bloc de micro. Part vers Gemini, ou sert à détecter qu'on veut couper.
+  void _surBlocMicro(Uint8List pcm) {
+    if (!_retenirMicro) {
+      _blocsForts = 0;
+      _session?.envoyerAudio(pcm);
+      return;
+    }
+    if (_jeterAudio) {
+      // On a déjà coupé : Gemini doit entendre ce qu'on dit pour s'arrêter.
+      _session?.envoyerAudio(pcm);
+      return;
+    }
+    if (niveauPcm(pcm) >= _seuilCoupure) {
+      if (++_blocsForts >= _blocsPourCouper) interrompre();
+    } else {
+      _blocsForts = 0;
+    }
+  }
+
+  /// Coupe la parole à l'assistant — parce qu'on parle fort, ou qu'on a
+  /// touché l'orbe.
+  void interrompre() {
+    if (!_hautParleur.enLecture && !_tourModeleActif) return;
+    _hautParleur.couper();
+    _jeterAudio = true;
+    _blocsForts = 0;
+    if (_sortieEnCours.isNotEmpty) {
+      _finaliser('assistant', suffixe: ' …');
+      _sortieEnCours = '';
+    }
+    if (mounted) state = state.copyWith(phase: PhaseLive.ecoute);
+    if (_ref.read(configLiveProvider).retourHaptique) {
+      HapticFeedback.selectionClick();
+    }
   }
 
   set ecran(EcranLive? e) => _ecran = e;
@@ -261,11 +320,8 @@ class LiveController extends StateNotifier<EtatLive> {
 
     try {
       await _micro.demarrer(
-        surBloc: (pcm) => _session?.envoyerAudio(pcm),
-        surNiveau: (n) {
-          if (!mounted) return;
-          state = state.copyWith(niveauMicro: n);
-        },
+        surBloc: _surBlocMicro,
+        surNiveau: (n) => niveauMicro.value = n,
       );
     } catch (e) {
       await _toutArreter();
@@ -305,6 +361,11 @@ class LiveController extends StateNotifier<EtatLive> {
   }
 
   Future<void> _toutArreter() async {
+    _tourModeleActif = false;
+    _jeterAudio = false;
+    _blocsForts = 0;
+    niveauMicro.value = 0;
+    niveauVoix.value = 0;
     _reprise?.cancel();
     _reprise = null;
     await _abonnement?.cancel();
@@ -317,7 +378,8 @@ class LiveController extends StateNotifier<EtatLive> {
 
   void couperMicro(bool coupe) {
     _micro.coupe = coupe;
-    state = state.copyWith(microCoupe: coupe, niveauMicro: 0);
+    niveauMicro.value = 0;
+    state = state.copyWith(microCoupe: coupe);
   }
 
   /// Un message tapé pendant la conversation.
@@ -325,6 +387,8 @@ class LiveController extends StateNotifier<EtatLive> {
     final t = texte.trim();
     if (t.isEmpty || _session == null) return;
     _hautParleur.couper();
+    _jeterAudio = false;
+    _tourModeleActif = true;
     _ajouterLigne(LigneLive('user', t, finale: true));
     state = state.copyWith(phase: PhaseLive.reflexion);
     _session!.envoyerTexte(t);
@@ -349,6 +413,8 @@ class LiveController extends StateNotifier<EtatLive> {
         break;
 
       case LiveAudio(:final pcm):
+        _tourModeleActif = true;
+        if (_jeterAudio) return;
         if (state.phase != PhaseLive.parole) {
           if (_ref.read(configLiveProvider).retourHaptique) {
             HapticFeedback.lightImpact();
@@ -362,6 +428,8 @@ class LiveController extends StateNotifier<EtatLive> {
         _mettreAJourLigne('user', _entreeEnCours);
 
       case LiveTranscriptionSortie(:final texte):
+        _tourModeleActif = true;
+        if (_jeterAudio) return;
         // Un nouveau tour du modèle clôt ce que l'utilisateur disait.
         if (_entreeEnCours.isNotEmpty) {
           _finaliser('user');
@@ -372,13 +440,15 @@ class LiveController extends StateNotifier<EtatLive> {
 
       case LiveInterrompu():
         _hautParleur.couper();
+        _tourModeleActif = false;
         if (_sortieEnCours.isNotEmpty) {
           _finaliser('assistant', suffixe: ' …');
           _sortieEnCours = '';
         }
-        state = state.copyWith(phase: PhaseLive.ecoute);
+        _reprendreEcoute();
 
       case LiveTourTermine():
+        _tourModeleActif = false;
         if (_sortieEnCours.isNotEmpty) {
           _finaliser('assistant');
           _sortieEnCours = '';
@@ -387,12 +457,11 @@ class LiveController extends StateNotifier<EtatLive> {
           _finaliser('user');
           _entreeEnCours = '';
         }
-        // Le haut-parleur finit sa file ; c'est lui qui repassera en écoute.
-        if (!_hautParleur.enLecture) {
-          state = state.copyWith(phase: PhaseLive.ecoute);
-        }
+        // Le haut-parleur finit sa file ; c'est lui qui rouvrira le micro.
+        if (!_hautParleur.enLecture) _reprendreEcoute();
 
       case LiveAppelOutils(:final appels):
+        _tourModeleActif = true;
         await _executerOutils(appels);
 
       case LiveFermetureAnnoncee():
@@ -605,6 +674,8 @@ Tu es en conversation ORALE avec le commerçant, au comptoir, en français.
     _toutArreter();
     _micro.liberer();
     _hautParleur.liberer();
+    niveauMicro.dispose();
+    niveauVoix.dispose();
     super.dispose();
   }
 }

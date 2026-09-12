@@ -94,23 +94,39 @@ class MicroLive {
 /// Le haut-parleur, PCM 16 bits mono 24 kHz.
 ///
 /// Le lecteur natif ne sait pas vider sa file. On garde donc la nôtre côté
-/// Dart et on ne lui donne que de petits blocs, à sa demande : quand
-/// l'utilisateur coupe la parole, on jette notre file et il ne reste au plus
-/// qu'un cinquième de seconde à s'éteindre.
+/// Dart et on ne lui donne que ce qu'il faut, à sa demande : quand
+/// l'utilisateur coupe la parole, on jette notre file et il ne reste que le
+/// tampon natif à s'éteindre.
+///
+/// Le tampon natif est tenu large (une demi-seconde) et rempli par gros
+/// blocs : le rappel arrive par le canal de plateforme, sur le fil de l'UI,
+/// et un rappel qui tarde de 200 ms pendant une animation suffisait à
+/// laisser le tampon à sec — d'où des hoquets qu'on entendait comme des
+/// syllabes bégayées.
 class HautParleurLive {
   static const int _frequence = 24000;
 
   /// En dessous de ce nombre d'échantillons en réserve, le natif réclame.
-  static const int _seuil = _frequence ~/ 5; // 200 ms
+  static const int _seuil = _frequence ~/ 2; // 500 ms
 
-  /// Ce qu'on lui donne à chaque demande.
-  static const int _bloc = _frequence ~/ 10; // 100 ms
+  /// Ce qu'on lui donne au plus à chaque demande.
+  static const int _blocMax = _frequence; // 1 s
+
+  /// On n'ouvre pas la lecture avant d'avoir ceci en réserve : démarrer sur
+  /// 40 ms de son, c'est s'assurer de tomber à sec juste après.
+  static const int _amorce = _frequence * 3 ~/ 10; // 300 ms
+
+  /// Quand le natif est vide, on attend un peu avant de déclarer le silence :
+  /// Gemini envoie sa voix par rafales, et un creux de 100 ms entre deux
+  /// n'est pas une fin de phrase.
+  static const _delaiSilence = Duration(milliseconds: 450);
 
   final _file = Queue<Uint8List>();
-  var _reste = Uint8List(0);
+  int _enFile = 0; // octets
   bool _pret = false;
   bool _enLecture = false;
-  int _generation = 0;
+  bool _demarre = false; // le natif a reçu au moins un bloc de ce tour
+  Timer? _silence;
 
   final void Function(double niveau) surNiveau;
   final void Function() surSilence;
@@ -134,19 +150,28 @@ class HautParleurLive {
   }
 
   void jouer(Uint8List bloc) {
-    if (!_pret) return;
+    if (!_pret || bloc.isEmpty) return;
+    _silence?.cancel();
     _file.add(bloc);
+    _enFile += bloc.length;
     if (!_enLecture) {
       _enLecture = true;
-      pcm.FlutterPcmSound.start();
+      _demarre = false;
+    }
+    // Amorce : on attend d'avoir de quoi tenir, puis on lance. Ensuite, c'est
+    // le natif qui réclame.
+    if (!_demarre && _enFile >= _amorce * 2) {
+      _demarre = true;
+      if (!pcm.FlutterPcmSound.start()) _alimenter(0);
     }
   }
 
   /// Vide tout : interruption, ou fin de conversation.
   void couper() {
+    _silence?.cancel();
     _file.clear();
-    _reste = Uint8List(0);
-    _generation++;
+    _enFile = 0;
+    _demarre = false;
     if (_enLecture) {
       _enLecture = false;
       surNiveau(0);
@@ -154,30 +179,27 @@ class HautParleurLive {
   }
 
   void _alimenter(int restants) {
-    final gen = _generation;
-    const voulu = _bloc * 2; // octets
-    final tampon = BytesBuilder(copy: false);
-    if (_reste.isNotEmpty) {
-      tampon.add(_reste);
-      _reste = Uint8List(0);
-    }
-    while (tampon.length < voulu && _file.isNotEmpty) {
-      tampon.add(_file.removeFirst());
-    }
-    var octets = tampon.takeBytes();
-    if (octets.isEmpty) {
+    if (_file.isEmpty) {
       if (_enLecture && restants == 0) {
-        _enLecture = false;
         surNiveau(0);
-        surSilence();
+        _silence?.cancel();
+        _silence = Timer(_delaiSilence, () {
+          if (_file.isNotEmpty || !_enLecture) return;
+          _enLecture = false;
+          _demarre = false;
+          surSilence();
+        });
       }
       return;
     }
-    if (octets.length > voulu) {
-      _reste = Uint8List.sublistView(octets, voulu);
-      octets = Uint8List.sublistView(octets, 0, voulu);
+    const voulu = _blocMax * 2; // octets
+    final tampon = BytesBuilder(copy: false);
+    while (tampon.length < voulu && _file.isNotEmpty) {
+      final b = _file.removeFirst();
+      _enFile -= b.length;
+      tampon.add(b);
     }
-    if (gen != _generation) return;
+    final octets = tampon.takeBytes();
     surNiveau(niveauPcm(octets));
     pcm.FlutterPcmSound.feed(pcm.PcmArrayInt16(
         bytes: octets.buffer.asByteData(
