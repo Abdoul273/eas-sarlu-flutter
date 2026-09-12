@@ -1,4 +1,4 @@
-import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../core/auth/auth_state.dart';
@@ -6,6 +6,7 @@ import '../core/auth/verrou_local.dart';
 import '../features/auth/verrou_page.dart';
 import '../features/activite/activite_page.dart';
 import '../features/assistant/assistant_page.dart';
+import '../features/assistant/live/live_page.dart';
 import '../features/auth/auth_gate_page.dart';
 import '../features/bons/bons_livraison_page.dart';
 import '../features/calculateur/calculateur_page.dart';
@@ -243,6 +244,30 @@ final routerProvider = Provider<GoRouter>((ref) {
         path: '/assistant',
         name: 'assistant',
         builder: (context, state) => const AssistantPage(),
+      ),
+      // Le mode vocal se pousse par-dessus la discussion, en plein écran.
+      GoRoute(
+        path: '/assistant/vocal',
+        name: 'assistant-vocal',
+        pageBuilder: (context, state) => CustomTransitionPage(
+          key: state.pageKey,
+          child: const LivePage(),
+          transitionDuration: const Duration(milliseconds: 320),
+          transitionsBuilder: (context, anim, _, child) {
+            final courbe =
+                CurvedAnimation(parent: anim, curve: Curves.easeOutCubic);
+            return FadeTransition(
+              opacity: courbe,
+              child: SlideTransition(
+                position: Tween(
+                  begin: const Offset(0, 0.06),
+                  end: Offset.zero,
+                ).animate(courbe),
+                child: child,
+              ),
+            );
+          },
+        ),
       ),
       GoRoute(
         path: '/parametres',

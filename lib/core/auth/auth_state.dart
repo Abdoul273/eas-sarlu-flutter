@@ -10,7 +10,17 @@ import 'auth_repository.dart';
 // --- Providers de base ---
 
 final secureStorageProvider = Provider<FlutterSecureStorage>((ref) {
-  return const FlutterSecureStorage();
+  return const FlutterSecureStorage(
+    aOptions: AndroidOptions(
+      // Quand la clé du coffre change sous nos pieds (réinstallation,
+      // restauration de sauvegarde, mise à jour système), tout ce qui y est
+      // devient illisible : BAD_DECRYPT au démarrage, écran rouge, et rien
+      // d'autre ne s'affiche plus jamais. On efface plutôt le coffre : le
+      // vendeur se reconnecte, et l'application repart.
+      resetOnError: true,
+      encryptedSharedPreferences: true,
+    ),
+  );
 });
 
 final apiClientProvider = Provider<ApiClient>((ref) {

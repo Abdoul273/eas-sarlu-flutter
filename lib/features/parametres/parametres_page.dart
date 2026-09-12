@@ -59,259 +59,103 @@ class _ParametresPageState extends ConsumerState<ParametresPage> {
           ),
         ),
         body: ListView(
-          padding: const EdgeInsets.all(Espace.page),
+          padding: const EdgeInsets.fromLTRB(
+              Espace.page, Espace.sm, Espace.page, Espace.basDeListe),
           children: [
+            // ── Le compte, en tête ──
+            _EnTeteCompte(
+              initiales: initiales,
+              nom: user?.nom ?? 'Utilisateur',
+              email: user?.email ?? 'Connecté',
+              synchro: syncState.pendingCount == 0,
+              enAttente: syncState.pendingCount,
+            ),
+            const SizedBox(height: Espace.xl),
+
             // Chaque section n'apparaît qu'à qui a le droit d'y toucher. Le
             // serveur refuse de toute façon les écritures ; ce masquage évite
             // d'ouvrir un formulaire dont l'enregistrement échouera.
-
-            // 1. Conteneur Rétractable : FICHE ENTREPRISE
-            if (user?.aLeDroit('entreprise') ?? false) ...[
-              const _ConteneurRetractableCard(
-                title: 'Fiche Entreprise',
-                subtitle: 'Logo, nom, NIF, RCCM, coordonnées & banque',
-                icon: Icons.business_rounded,
-                initiallyExpanded: true,
-                child: EntrepriseForm(isEmbedded: true),
-              ),
-              const SizedBox(height: Espace.md),
+            if ((user?.aLeDroit('entreprise') ?? false) ||
+                (user?.aLeDroit('utilisateurs') ?? false) ||
+                (user?.aLeDroit('appareils') ?? false)) ...[
+              const _TitreGroupe('Magasin'),
+              if (user?.aLeDroit('entreprise') ?? false)
+                const _Volet(
+                  titre: 'Fiche entreprise',
+                  sousTitre: 'Logo, NIF, RCCM, coordonnées, banque',
+                  icone: Icons.storefront_rounded,
+                  teinte: Color(0xFFFF5E1A),
+                  child: EntrepriseForm(isEmbedded: true),
+                ),
+              if (user?.aLeDroit('utilisateurs') ?? false)
+                const _Volet(
+                  titre: 'Utilisateurs & droits',
+                  sousTitre: 'Comptes du magasin et ce qu\'ils peuvent faire',
+                  icone: Icons.group_rounded,
+                  teinte: Color(0xFF6366F1),
+                  child: UtilisateursSection(isEmbedded: true),
+                ),
+              if (user?.aLeDroit('appareils') ?? false)
+                const _Volet(
+                  titre: 'Appareils de confiance',
+                  sousTitre: 'Téléphones autorisés à se synchroniser',
+                  icone: Icons.devices_rounded,
+                  teinte: Color(0xFF0EA5E9),
+                  child: AppareilsSection(isEmbedded: true),
+                ),
+              const SizedBox(height: Espace.lg),
             ],
 
-            // 2. Conteneur Rétractable : GESTION DES UTILISATEURS
-            if (user?.aLeDroit('utilisateurs') ?? false) ...[
-              const _ConteneurRetractableCard(
-                title: 'Utilisateurs & Droits d\'Accès',
-                subtitle: 'Gestion des comptes d\'utilisateurs du magasin',
-                icon: Icons.people_rounded,
-                initiallyExpanded: false,
-                child: UtilisateursSection(isEmbedded: true),
-              ),
-              const SizedBox(height: Espace.md),
-            ],
-
-            // 3. Conteneur Rétractable : SÉCURITÉ DE L'APPAREIL
-            // Volontairement sans condition de droit : le verrou et l'empreinte
-            // protègent le téléphone de celui qui le tient, pas les données des
-            // autres. Un compte sans aucun droit pose le même téléphone sur le
-            // même comptoir et doit pouvoir régler les deux.
-            const _ConteneurRetractableCard(
-              title: 'Sécurité & Verrouillage',
-              subtitle: 'Code à 6 chiffres et déverrouillage par empreinte',
-              icon: Icons.fingerprint_rounded,
-              initiallyExpanded: false,
-              child: SecuriteSection(),
-            ),
-            const SizedBox(height: Espace.md),
-
-            // 4. Conteneur Rétractable : ASSISTANT IA
-            const _ConteneurRetractableCard(
-              title: 'Assistant IA & Voix',
-              subtitle: 'Fournisseur, clé API, lecture à voix haute',
-              icon: Icons.auto_awesome_rounded,
-              initiallyExpanded: false,
+            const _TitreGroupe('Assistant'),
+            const _Volet(
+              titre: 'Assistant IA & voix',
+              sousTitre: 'Fournisseur, clé API, mode vocal, lecture',
+              icone: Icons.auto_awesome_rounded,
+              teinte: Color(0xFFA855F7),
               child: AssistantSection(isEmbedded: true),
             ),
-            const SizedBox(height: Espace.md),
+            const SizedBox(height: Espace.lg),
 
-            // 5. Conteneur Rétractable : APPAREILS DE CONFIANCE
-            if (user?.aLeDroit('appareils') ?? false) ...[
-              const _ConteneurRetractableCard(
-                title: 'Appareils de Confiance',
-                subtitle: 'Terminaux et téléphones autorisés à se synchroniser',
-                icon: Icons.devices_rounded,
-                initiallyExpanded: false,
-                child: AppareilsSection(isEmbedded: true),
-              ),
-              const SizedBox(height: Espace.md),
-            ],
-
-            // 6. Conteneur Rétractable : MON COMPTE
-            _ConteneurRetractableCard(
-              title: 'Mon Compte',
-              subtitle: user?.email ?? 'Informations personnelles et mot de passe',
-              icon: Icons.person_pin_rounded,
-              initiallyExpanded: false,
-              child: Column(
-                children: [
-                  Row(
-                    children: [
-                      Container(
-                        width: 52,
-                        height: 52,
-                        decoration: BoxDecoration(
-                          color: scheme.primary.withValues(alpha: 0.15),
-                          shape: BoxShape.circle,
-                        ),
-                        alignment: Alignment.center,
-                        child: Text(
-                          initiales,
-                          style: TextStyle(
-                            color: scheme.primary,
-                            fontWeight: FontWeight.w800,
-                            fontSize: 20,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: Espace.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              user?.nom ?? 'Utilisateur',
-                              style: theme.textTheme.titleMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              user?.email ?? 'Connecté',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: scheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: Espace.md),
-                  const Divider(height: 1),
-                  const SizedBox(height: Espace.xs),
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.lock_outline_rounded,
-                        color: scheme.primary),
-                    title: const Text('Changer le mot de passe'),
-                    trailing: Icon(Icons.chevron_right_rounded,
-                        color: scheme.outline),
-                    onTap: () => _changerMotDePasse(context, ref),
-                  ),
-                  // Le code de déverrouillage se change dans « Sécurité &
-                  // Verrouillage ». L'entrée qui vivait ici n'écrivait que le
-                  // code du serveur : le verrou local restait sur l'ancien, et
-                  // l'appareil se retrouvait avec deux codes différents.
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    leading: Icon(Icons.logout_rounded, color: scheme.error),
-                    title: Text(
-                      'Se déconnecter',
-                      style: TextStyle(
-                          color: scheme.error, fontWeight: FontWeight.bold),
-                    ),
-                    onTap: () => _deconnexion(context, ref),
-                  ),
-                ],
+            const _TitreGroupe('Appareil'),
+            // Volontairement sans condition de droit : le verrou et
+            // l'empreinte protègent le téléphone de celui qui le tient, pas
+            // les données des autres.
+            const _Volet(
+              titre: 'Sécurité & verrouillage',
+              sousTitre: 'Code à 6 chiffres, empreinte',
+              icone: Icons.fingerprint_rounded,
+              teinte: Color(0xFF10B981),
+              child: SecuriteSection(),
+            ),
+            _Volet(
+              titre: 'Apparence',
+              sousTitre: switch (themeMode) {
+                ThemeMode.light => 'Thème clair',
+                ThemeMode.dark => 'Thème sombre',
+                ThemeMode.system => 'Suit le système',
+              },
+              icone: Icons.palette_rounded,
+              teinte: const Color(0xFFF59E0B),
+              child: _ChoixTheme(
+                courant: themeMode,
+                onChange: (m) =>
+                    ref.read(themeModeProvider.notifier).setThemeMode(m),
               ),
             ),
-            const SizedBox(height: Espace.md),
-
-            // 7. Conteneur Rétractable : APPARENCE & THÈME
-            _ConteneurRetractableCard(
-              title: 'Apparence & Thème',
-              subtitle: 'Mode clair, sombre ou automatique',
-              icon: Icons.palette_rounded,
-              initiallyExpanded: false,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'SÉLECTIONNEZ LE THÈME DE L\'APPLICATION',
-                    style: theme.textTheme.labelSmall?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: scheme.primary,
-                    ),
-                  ),
-                  const SizedBox(height: Espace.sm),
-                  SegmentedButton<ThemeMode>(
-                    segments: const [
-                      ButtonSegment<ThemeMode>(
-                        value: ThemeMode.light,
-                        label: Text('Clair'),
-                        icon: Icon(Icons.light_mode_rounded),
-                      ),
-                      ButtonSegment<ThemeMode>(
-                        value: ThemeMode.dark,
-                        label: Text('Sombre'),
-                        icon: Icon(Icons.dark_mode_rounded),
-                      ),
-                      ButtonSegment<ThemeMode>(
-                        value: ThemeMode.system,
-                        label: Text('Système'),
-                        icon: Icon(Icons.settings_suggest_rounded),
-                      ),
-                    ],
-                    selected: {themeMode},
-                    onSelectionChanged: (vals) {
-                      ref
-                          .read(themeModeProvider.notifier)
-                          .setThemeMode(vals.first);
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: Espace.md),
-
-            // 8. Conteneur Rétractable : DONNÉES & SYNCHRONISATION
-            _ConteneurRetractableCard(
-              title: 'Données & Synchronisation',
-              subtitle: 'Sauvegarde locale, synchronisation distante et réinitialisation',
-              icon: Icons.sync_rounded,
-              badgeText: syncState.pendingCount > 0
+            _Volet(
+              titre: 'Données & synchronisation',
+              sousTitre: syncState.lastSync != null
+                  ? 'Dernière synchro ${DateFormat('dd/MM HH:mm', 'fr_FR').format(syncState.lastSync!)}'
+                  : 'Sauvegarde, synchronisation, restauration',
+              icone: Icons.cloud_sync_rounded,
+              teinte: const Color(0xFF3B82F6),
+              badge: syncState.pendingCount > 0
                   ? '${syncState.pendingCount} en attente'
                   : null,
-              badgeColor: syncState.pendingCount > 0
-                  ? context.metier.alerte
-                  : context.metier.succes,
-              initiallyExpanded: false,
+              badgeCouleur: context.metier.alerte,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    children: [
-                      Container(
-                        padding: const EdgeInsets.all(8),
-                        decoration: BoxDecoration(
-                          color: context.metier.succes.withValues(alpha: 0.12),
-                          borderRadius: BorderRadius.circular(Rayon.sm),
-                        ),
-                        child: Icon(Icons.cloud_done_rounded,
-                            color: context.metier.succes),
-                      ),
-                      const SizedBox(width: Espace.md),
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              'Dernière synchronisation',
-                              style: theme.textTheme.bodyMedium?.copyWith(
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            Text(
-                              syncState.lastSync != null
-                                  ? DateFormat('dd/MM/yyyy HH:mm', 'fr_FR')
-                                      .format(syncState.lastSync!)
-                                  : 'Aucune récente',
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: scheme.onSurfaceVariant,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                      BadgePastille(
-                        texte: '${syncState.pendingCount} en attente',
-                        couleur: syncState.pendingCount > 0
-                            ? context.metier.alerte
-                            : context.metier.succes,
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: Espace.md),
                   AppButton(
                     label: 'Forcer la synchronisation',
                     icon: Icons.sync_rounded,
@@ -320,56 +164,50 @@ class _ParametresPageState extends ConsumerState<ParametresPage> {
                     isTonal: true,
                     expanded: true,
                   ),
-                  const SizedBox(height: Espace.sm),
-                  const Divider(height: 1),
-                  const SizedBox(height: Espace.xs),
+                  const SizedBox(height: Espace.md),
                   // Sauvegarde et restauration complètes, avec aperçu du
-                  // contenu avant d'écraser quoi que ce soit. Remplace les deux
-                  // anciennes entrées, qui partaient sans rien montrer.
+                  // contenu avant d'écraser quoi que ce soit.
                   const SauvegardeSection(isEmbedded: true),
                 ],
               ),
             ),
             const SizedBox(height: Espace.lg),
 
-            // Carte À Propos
-            AppCard(
-              margin: EdgeInsets.zero,
-              child: Row(
+            const _TitreGroupe('Compte'),
+            _Volet(
+              titre: 'Mon compte',
+              sousTitre: 'Mot de passe, déconnexion',
+              icone: Icons.person_rounded,
+              teinte: const Color(0xFF64748B),
+              child: Column(
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(Espace.sm),
-                    decoration: BoxDecoration(
-                      color: scheme.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(Rayon.sm),
-                    ),
-                    child: Icon(Icons.info_outline_rounded,
-                        color: scheme.primary),
+                  _LigneAction(
+                    icone: Icons.lock_outline_rounded,
+                    libelle: 'Changer le mot de passe',
+                    onTap: () => _changerMotDePasse(context, ref),
                   ),
-                  const SizedBox(width: Espace.md),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          'E.A.S Sarlu',
-                          style: theme.textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                        Text(
-                          'Gestion de magasin • Version 1.0.0',
-                          style: theme.textTheme.bodySmall?.copyWith(
-                            color: scheme.onSurfaceVariant,
-                          ),
-                        ),
-                      ],
-                    ),
+                  // Le code de déverrouillage se change dans « Sécurité &
+                  // verrouillage » : ici on ne toucherait que le code du
+                  // serveur, et l'appareil garderait l'ancien.
+                  _LigneAction(
+                    icone: Icons.logout_rounded,
+                    libelle: 'Se déconnecter',
+                    danger: true,
+                    onTap: () => _deconnexion(context, ref),
                   ),
                 ],
               ),
             ),
-            const SizedBox(height: 80),
+            const SizedBox(height: Espace.xl),
+
+            Center(
+              child: Text(
+                'E.A.S Sarlu · version 1.0.0',
+                style: theme.textTheme.bodySmall?.copyWith(
+                  color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                ),
+              ),
+            ),
           ],
         ),
       ),
@@ -457,135 +295,414 @@ class _ParametresPageState extends ConsumerState<ParametresPage> {
   }
 }
 
+// ─── Les briques de la page ───────────────────────────────────────────────────
+
+/// Le compte connecté, en tête : qui je suis, et si le téléphone est à jour.
+class _EnTeteCompte extends StatelessWidget {
+  final String initiales;
+  final String nom;
+  final String email;
+  final bool synchro;
+  final int enAttente;
+
+  const _EnTeteCompte({
+    required this.initiales,
+    required this.nom,
+    required this.email,
+    required this.synchro,
+    required this.enAttente,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Container(
+      padding: const EdgeInsets.all(Espace.lg),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(Rayon.xl),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            scheme.primary,
+            Color.lerp(scheme.primary, scheme.tertiary, 0.7)!,
+          ],
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: scheme.primary.withValues(alpha: 0.28),
+            blurRadius: 22,
+            offset: const Offset(0, 10),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              color: Colors.white.withValues(alpha: 0.2),
+              shape: BoxShape.circle,
+              border: Border.all(color: Colors.white.withValues(alpha: 0.35)),
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              initiales,
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w800,
+                fontSize: 22,
+              ),
+            ),
+          ),
+          const SizedBox(width: Espace.md),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  nom,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.2,
+                  ),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  email,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.82),
+                    fontSize: 13,
+                  ),
+                ),
+                const SizedBox(height: Espace.sm),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(Rayon.pilule),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(
+                        synchro
+                            ? Icons.cloud_done_rounded
+                            : Icons.cloud_upload_rounded,
+                        size: 14,
+                        color: Colors.white,
+                      ),
+                      const SizedBox(width: 6),
+                      Text(
+                        synchro ? 'À jour' : '$enAttente à envoyer',
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _TitreGroupe extends StatelessWidget {
+  final String texte;
+  const _TitreGroupe(this.texte);
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Padding(
+      padding: const EdgeInsets.only(left: 6, bottom: Espace.sm),
+      child: Text(
+        texte.toUpperCase(),
+        style: theme.textTheme.labelSmall?.copyWith(
+          fontWeight: FontWeight.w800,
+          letterSpacing: 1.2,
+          color: theme.colorScheme.onSurfaceVariant,
+        ),
+      ),
+    );
+  }
+}
+
 /// Une rubrique des réglages, repliée par défaut.
 ///
 /// Les paramètres tiennent sur une page de plus de dix sujets : tout afficher
 /// d'un bloc obligeait à faire défiler pour trouver « où change-t-on le mot de
-/// passe ». Chaque sujet est donc un volet qu'on ouvre.
-class _ConteneurRetractableCard extends StatefulWidget {
-  final String title;
-  final String? subtitle;
-  final IconData icon;
-  final bool initiallyExpanded;
+/// passe ». Chaque sujet est donc un volet qu'on ouvre. La tuile d'icône a sa
+/// couleur propre : on repère la rubrique avant d'avoir lu son titre.
+class _Volet extends StatefulWidget {
+  final String titre;
+  final String? sousTitre;
+  final IconData icone;
+  final Color teinte;
   final Widget child;
+  final String? badge;
+  final Color? badgeCouleur;
 
-  /// Pastille affichée à droite du titre — « 3 en attente », par exemple : ce
-  /// qui mérite d'être vu sans ouvrir le volet.
-  final String? badgeText;
-  final Color? badgeColor;
-
-  const _ConteneurRetractableCard({
-    required this.title,
-    this.subtitle,
-    required this.icon,
-    this.initiallyExpanded = false,
-    this.badgeText,
-    this.badgeColor,
+  const _Volet({
+    required this.titre,
+    this.sousTitre,
+    required this.icone,
+    required this.teinte,
     required this.child,
+    this.badge,
+    this.badgeCouleur,
   });
 
   @override
-  State<_ConteneurRetractableCard> createState() =>
-      __ConteneurRetractableCardState();
+  State<_Volet> createState() => _VoletState();
 }
 
-class __ConteneurRetractableCardState
-    extends State<_ConteneurRetractableCard> {
-  late bool _expanded;
-
-  @override
-  void initState() {
-    super.initState();
-    _expanded = widget.initiallyExpanded;
-  }
+class _VoletState extends State<_Volet> {
+  bool _ouvert = false;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
-    return Container(
-      decoration: BoxDecoration(
-        color: scheme.surface,
-        borderRadius: BorderRadius.circular(Rayon.md),
-        border: Border.all(
-          color: _expanded
-              ? scheme.primary.withValues(alpha: 0.4)
-              : scheme.outlineVariant,
+    return Padding(
+      padding: const EdgeInsets.only(bottom: Espace.sm),
+      child: AnimatedContainer(
+        duration: Duree.moyenne,
+        curve: Curves.easeOutCubic,
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: BorderRadius.circular(Rayon.lg),
+          border: Border.all(
+            color: _ouvert
+                ? widget.teinte.withValues(alpha: 0.35)
+                : Colors.transparent,
+          ),
         ),
-        boxShadow: _expanded
-            ? [
-                BoxShadow(
-                  color: scheme.primary.withValues(alpha: 0.05),
-                  blurRadius: 10,
-                  offset: const Offset(0, 4),
-                ),
-              ]
-            : null,
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Theme(
-        data: theme.copyWith(dividerColor: Colors.transparent),
-        child: ExpansionTile(
-          initiallyExpanded: _expanded,
-          onExpansionChanged: (exp) => setState(() => _expanded = exp),
-          leading: Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: _expanded
-                  ? scheme.primary
-                  : scheme.primary.withValues(alpha: 0.12),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              widget.icon,
-              size: 20,
-              color: _expanded ? scheme.onPrimary : scheme.primary,
-            ),
-          ),
-          title: Text(
-            widget.title,
-            style: theme.textTheme.titleSmall?.copyWith(
-              fontWeight: FontWeight.bold,
-              color: _expanded ? scheme.primary : scheme.onSurface,
-            ),
-          ),
-          subtitle: widget.subtitle != null
-              ? Text(
-                  widget.subtitle!,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    color: scheme.onSurfaceVariant,
-                  ),
-                )
-              : null,
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (widget.badgeText != null) ...[
-                BadgePastille(
-                  texte: widget.badgeText!,
-                  couleur: widget.badgeColor ?? scheme.primary,
-                ),
-                const SizedBox(width: Espace.xs),
-              ],
-              Icon(
-                _expanded
-                    ? Icons.keyboard_arrow_up_rounded
-                    : Icons.keyboard_arrow_down_rounded,
-                color: _expanded ? scheme.primary : scheme.outline,
-              ),
-            ],
-          ),
-          childrenPadding: const EdgeInsets.all(Espace.page),
+        clipBehavior: Clip.antiAlias,
+        child: Column(
           children: [
-            const Divider(height: 1),
-            const SizedBox(height: Espace.md),
-            widget.child,
+            InkWell(
+              onTap: () => setState(() => _ouvert = !_ouvert),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(
+                    Espace.md, Espace.md, Espace.md, Espace.md),
+                child: Row(
+                  children: [
+                    Container(
+                      width: 42,
+                      height: 42,
+                      decoration: BoxDecoration(
+                        color: widget.teinte.withValues(alpha: 0.14),
+                        borderRadius: BorderRadius.circular(Rayon.md),
+                      ),
+                      child: Icon(widget.icone, color: widget.teinte, size: 22),
+                    ),
+                    const SizedBox(width: Espace.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            widget.titre,
+                            style: theme.textTheme.titleSmall?.copyWith(
+                              fontWeight: FontWeight.w700,
+                            ),
+                          ),
+                          if (widget.sousTitre != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              widget.sousTitre!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (widget.badge != null) ...[
+                      const SizedBox(width: Espace.xs),
+                      BadgePastille(
+                        texte: widget.badge!,
+                        couleur: widget.badgeCouleur ?? widget.teinte,
+                      ),
+                    ],
+                    const SizedBox(width: Espace.xs),
+                    AnimatedRotation(
+                      turns: _ouvert ? 0.5 : 0,
+                      duration: Duree.moyenne,
+                      curve: Curves.easeOutCubic,
+                      child: Icon(
+                        Icons.expand_more_rounded,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            AnimatedSize(
+              duration: Duree.moyenne,
+              curve: Curves.easeOutCubic,
+              alignment: Alignment.topCenter,
+              child: _ouvert
+                  ? Padding(
+                      padding: const EdgeInsets.fromLTRB(
+                          Espace.page, 0, Espace.page, Espace.page),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        children: [
+                          Divider(
+                            height: 1,
+                            color: scheme.outlineVariant.withValues(alpha: 0.5),
+                          ),
+                          const SizedBox(height: Espace.md),
+                          widget.child,
+                        ],
+                      ),
+                    )
+                  : const SizedBox(width: double.infinity),
+            ),
           ],
         ),
       ),
+    );
+  }
+}
+
+/// Une ligne cliquable dans un volet.
+class _LigneAction extends StatelessWidget {
+  final IconData icone;
+  final String libelle;
+  final bool danger;
+  final VoidCallback onTap;
+
+  const _LigneAction({
+    required this.icone,
+    required this.libelle,
+    this.danger = false,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final couleur = danger ? scheme.error : scheme.onSurface;
+    return Material(
+      color: Colors.transparent,
+      borderRadius: BorderRadius.circular(Rayon.md),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(Rayon.md),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
+          child: Row(
+            children: [
+              Icon(icone, color: danger ? scheme.error : scheme.primary,
+                  size: 22),
+              const SizedBox(width: Espace.md),
+              Expanded(
+                child: Text(
+                  libelle,
+                  style: TextStyle(
+                    color: couleur,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14.5,
+                  ),
+                ),
+              ),
+              Icon(Icons.chevron_right_rounded,
+                  color: scheme.outline, size: 20),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Le thème, en trois tuiles plutôt qu'en boutons segmentés : on voit ce
+/// qu'on choisit.
+class _ChoixTheme extends StatelessWidget {
+  final ThemeMode courant;
+  final ValueChanged<ThemeMode> onChange;
+  const _ChoixTheme({required this.courant, required this.onChange});
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final options = [
+      (ThemeMode.light, 'Clair', Icons.light_mode_rounded),
+      (ThemeMode.dark, 'Sombre', Icons.dark_mode_rounded),
+      (ThemeMode.system, 'Auto', Icons.brightness_auto_rounded),
+    ];
+    return Row(
+      children: [
+        for (final (mode, libelle, icone) in options) ...[
+          Expanded(
+            child: Material(
+              color: courant == mode
+                  ? scheme.primary.withValues(alpha: 0.12)
+                  : scheme.surfaceContainerHigh,
+              borderRadius: BorderRadius.circular(Rayon.md),
+              clipBehavior: Clip.antiAlias,
+              child: InkWell(
+                onTap: () => onChange(mode),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    borderRadius: BorderRadius.circular(Rayon.md),
+                    border: Border.all(
+                      color: courant == mode
+                          ? scheme.primary
+                          : Colors.transparent,
+                      width: 1.5,
+                    ),
+                  ),
+                  child: Column(
+                    children: [
+                      Icon(icone,
+                          color: courant == mode
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant),
+                      const SizedBox(height: 6),
+                      Text(
+                        libelle,
+                        style: TextStyle(
+                          fontSize: 12.5,
+                          fontWeight: FontWeight.w700,
+                          color: courant == mode
+                              ? scheme.primary
+                              : scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+          if (mode != ThemeMode.system) const SizedBox(width: Espace.sm),
+        ],
+      ],
     );
   }
 }

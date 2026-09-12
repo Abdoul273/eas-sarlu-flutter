@@ -8,6 +8,11 @@
     <!-- L'application sert d'abord hors ligne : la connexion n'est pas requise
          pour l'ouvrir, seulement pour synchroniser. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Mode vocal de l'assistant : le micro part en continu vers Gemini Live.
+         MODIFY_AUDIO_SETTINGS permet le mode « communication » (annulation
+         d'écho matérielle), sans lequel l'assistant s'entendrait lui-même. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <!-- Depuis Android 13, une application qui ne déclare PAS cette permission
          n'affiche aucune notification : pas d'erreur, pas de journal, rien.

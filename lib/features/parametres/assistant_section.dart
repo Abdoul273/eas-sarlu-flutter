@@ -5,6 +5,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../app/theme.dart';
 import '../../app/ui_kit.dart';
 import '../assistant/ai_config.dart';
+import '../assistant/live/live_config.dart';
 import '../assistant/voix.dart';
 import '../assistant/voix_neurale.dart';
 
@@ -233,7 +234,114 @@ class _AssistantSectionState extends ConsumerState<AssistantSection> {
         ],
 
         const Divider(height: Espace.xl),
+        const _SectionModeVocal(),
+        const Divider(height: Espace.xl),
         const _SectionVoix(),
+      ],
+    );
+  }
+}
+
+/// Réglages du mode vocal (Gemini Live) : la conversation en direct.
+class _SectionModeVocal extends ConsumerWidget {
+  const _SectionModeVocal();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    final cfg = ref.watch(configLiveProvider);
+    final notifier = ref.read(configLiveProvider.notifier);
+    final cleGemini =
+        (ref.watch(configIAProvider).cles[FournisseurIA.gemini] ?? '')
+            .trim()
+            .isNotEmpty;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Icon(Icons.graphic_eq_rounded, size: 18, color: scheme.primary),
+            const SizedBox(width: 6),
+            Text('Mode vocal',
+                style: theme.textTheme.labelLarge
+                    ?.copyWith(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        const SizedBox(height: Espace.xs),
+        Text(
+          'Une vraie conversation : vous parlez, l\'assistant répond de vive '
+          'voix, vous pouvez le couper. Il consulte le magasin et propose des '
+          'écritures que vous confirmez à l\'écran. Fonctionne avec Gemini Live, '
+          'sur la clé Gemini.',
+          style: theme.textTheme.bodySmall
+              ?.copyWith(color: scheme.onSurfaceVariant),
+        ),
+        if (!cleGemini) ...[
+          const SizedBox(height: Espace.sm),
+          Container(
+            padding: const EdgeInsets.all(Espace.sm + 2),
+            decoration: BoxDecoration(
+              color: context.metier.alerteFond,
+              borderRadius: BorderRadius.circular(Rayon.sm),
+            ),
+            child: Row(
+              children: [
+                Icon(Icons.info_outline_rounded,
+                    size: 18, color: context.metier.alerte),
+                const SizedBox(width: Espace.sm),
+                Expanded(
+                  child: Text(
+                    'Aucune clé Gemini enregistrée : le mode vocal restera '
+                    'indisponible, même avec Claude pour le texte.',
+                    style: theme.textTheme.bodySmall,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+        const SizedBox(height: Espace.md),
+        Text('Voix de l\'assistant',
+            style: theme.textTheme.labelMedium
+                ?.copyWith(fontWeight: FontWeight.w700)),
+        const SizedBox(height: Espace.xs),
+        DropdownButtonFormField<String>(
+          initialValue: cfg.voix,
+          isExpanded: true,
+          decoration: const InputDecoration(border: OutlineInputBorder()),
+          items: [
+            for (final v in kVoixLive)
+              DropdownMenuItem(value: v.id, child: Text(v.libelle)),
+          ],
+          onChanged: (v) => v == null ? null : notifier.choisirVoix(v),
+        ),
+        const SizedBox(height: Espace.sm),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: const Text('Sous-titres'),
+          subtitle: const Text('Afficher ce qui se dit, des deux côtés'),
+          value: cfg.sousTitres,
+          onChanged: notifier.activerSousTitres,
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: const Text('Vibration'),
+          subtitle: const Text('Un léger retour quand l\'assistant prend la parole'),
+          value: cfg.retourHaptique,
+          onChanged: notifier.activerHaptique,
+        ),
+        SwitchListTile.adaptive(
+          contentPadding: EdgeInsets.zero,
+          dense: true,
+          title: const Text('Garder dans l\'historique'),
+          subtitle: const Text('La conversation vocale rejoint la discussion écrite'),
+          value: cfg.journaliser,
+          onChanged: notifier.activerJournal,
+        ),
       ],
     );
   }

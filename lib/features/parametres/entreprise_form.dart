@@ -8,11 +8,8 @@ import 'package:image_picker/image_picker.dart';
 import '../../app/format.dart';
 import '../../app/theme.dart';
 import '../../app/ui_kit.dart';
-import '../../core/api/endpoints.dart';
-import '../../core/auth/auth_state.dart';
 import '../../core/db/stores.dart';
 import '../../core/models/models.dart';
-import '../../core/reseau.dart';
 import '../../core/sync/op_queue.dart';
 import '../../core/sync/sync_engine.dart';
 
@@ -158,6 +155,15 @@ class _EntrepriseFormState extends ConsumerState<EntrepriseForm> {
 
     setState(() => _isLoading = true);
 
+    // La révision de la fiche déjà en place est reprise telle quelle.
+    //
+    // Sans elle, `toJson` n'émettait plus de `_rev`, l'enregistrement local le
+    // perdait, et l'opération partait au serveur sans dire sur quelle version
+    // elle se fondait : deux téléphones pouvaient s'écraser l'un l'autre sans
+    // que rien ne soit signalé. C'est cette révision qui permet au serveur de
+    // reconnaître un conflit.
+    final ancienne = await ref.read(storesProvider).getEntreprise();
+
     final entreprise = Entreprise(
       nom: _nomCtrl.text.trim(),
       slogan: _sloganCtrl.text.trim(),
@@ -180,26 +186,26 @@ class _EntrepriseFormState extends ConsumerState<EntrepriseForm> {
       banque: _banqueCtrl.text.trim(),
       swift: _swiftCtrl.text.trim(),
       couleurAccent: '#E85D04',
+      rev: ancienne?.rev,
+      updatedAt: ancienne?.updatedAt,
+      updatedBy: ancienne?.updatedBy,
     );
 
     try {
       final stores = ref.read(storesProvider);
       await stores.upsert('entreprise', entreprise);
 
-      // Récupérer la version sauvegardée localement (qui contient _rev si elle existait déjà)
-      final savedEnt = await stores.getEntreprise();
-      final entJson = savedEnt?.toJson() ?? entreprise.toJson();
-
+      // Un seul chemin vers le serveur : la file.
+      //
+      // Cet écran postait AUSSI la fiche en direct, dans un `catch` muet. Deux
+      // écritures pour une seule modification, dont l'une pouvait doubler
+      // l'autre et lui reprendre la main sur la révision — et, quand elle
+      // échouait, sans que personne ne l'apprenne. La file, elle, réessaie,
+      // signale ce qui bloque et fonctionne hors ligne : elle n'avait besoin
+      // d'aucune aide.
       final opQueue = ref.read(opQueueProvider);
-      await opQueue.enqueue('entreprise', {'record': entJson},
+      await opQueue.enqueue('entreprise', {'record': entreprise.toJson()},
           libelle: 'Fiche entreprise');
-
-      if (await aUneConnexion()) {
-        try {
-          final apiClient = ref.read(apiClientProvider);
-          await apiClient.dio.post(kDataEntreprise, data: entJson);
-        } catch (_) {}
-      }
 
       ref.read(syncEngineProvider).demanderSynchro();
 

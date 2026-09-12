@@ -7,6 +7,7 @@ import '../../app/theme.dart';
 import '../../app/ui_kit.dart';
 import '../../core/models/models.dart';
 import '../dashboard/dashboard_page.dart';
+import 'devis_sheet.dart';
 
 class _ItemCalculateur {
   final String id;
@@ -324,6 +325,37 @@ class _CalculateurPageState extends ConsumerState<CalculateurPage> {
       'nouvelle-vente',
       extra: {'articles': payload},
     );
+  }
+
+  /// Le calcul, mis en lignes de document.
+  ///
+  /// Le prix retenu est celui qui est À L'ÉCRAN, et non le prix habituel de
+  /// l'article : c'est tout l'intérêt du calculateur que de négocier avant de
+  /// chiffrer, et le devis doit porter le prix négocié.
+  List<LigneVente> _lignesDevis() => _items
+      .where((i) => i.quantite > 0)
+      .map((i) => LigneVente(
+            articleId: i.article.id,
+            articleRef: i.article.ref,
+            articleNom: i.article.nom,
+            unite: i.article.unite,
+            qte: i.quantite,
+            prixUnitaire: i.prixUnitaire,
+            total: i.total,
+          ))
+      .toList();
+
+  void _etablirDevis() {
+    final lignes = _lignesDevis();
+    if (lignes.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Ajoutez au moins un article avant de faire une '
+                'proforma')),
+      );
+      return;
+    }
+    ouvrirFeuilleDevis(context, lignes: lignes);
   }
 
   @override
@@ -801,9 +833,24 @@ class _CalculateurPageState extends ConsumerState<CalculateurPage> {
                       ),
                     ],
                   ),
+                  // Deux issues au calcul, et elles ne se valent pas : le devis
+                  // est un papier qu'on envoie et qui n'engage rien, la vente
+                  // touche au stock et à la caisse. La première est proposée en
+                  // second plan, la seconde reste le geste principal.
                   child: Row(
                     children: [
                       Expanded(
+                        child: AppButton(
+                          label: 'Proforma',
+                          icon: Icons.description_outlined,
+                          onPressed: _etablirDevis,
+                          isTonal: true,
+                          expanded: true,
+                        ),
+                      ),
+                      const SizedBox(width: Espace.sm),
+                      Expanded(
+                        flex: 2,
                         child: AppButton(
                           label: 'Créer la vente (${fmtGNF(totalGeneral)})',
                           icon: Icons.add_shopping_cart_rounded,

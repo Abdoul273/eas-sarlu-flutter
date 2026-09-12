@@ -54,6 +54,11 @@ dependencies:
   # file_picker 11 ne se compile pas avec la chaîne Android du projet
   # (GeneratedPluginRegistrant : symbole introuvable). La 8.1.4 fonctionne.
   file_picker: ^8.1.4
+  # Mode vocal Gemini Live : le micro en PCM 16 kHz part sur une WebSocket
+  # bidirectionnelle, la voix revient en PCM 24 kHz et se joue au fil de l'eau.
+  web_socket_channel: ^3.0.3
+  record: ^7.1.1
+  flutter_pcm_sound: ^3.3.3
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -90,3 +95,10 @@ flutter:
   assets:
     - assets/icone/icone-512.png
     - assets/icone/icone-maskable-512.png
+    # Police des documents imprimés. Elle est EMBARQUÉE, et non téléchargée :
+    # une facture doit sortir au comptoir sans réseau. Elle apporte aussi
+    # l'Unicode, que les polices standard du PDF n'ont pas — un tiret cadratin
+    # ou un « ⚠ » y sortaient blancs, sans la moindre erreur.
+    - assets/polices/Roboto-Regular.ttf
+    - assets/polices/Roboto-Medium.ttf
+    - assets/polices/Roboto-Italic.ttf

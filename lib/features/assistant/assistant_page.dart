@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter/material.dart';
@@ -325,6 +326,21 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
     _scrollController.dispose();
     _focusNode.dispose();
     super.dispose();
+  }
+
+  /// Le mode vocal a besoin d'une clé Gemini, quel que soit le fournisseur
+  /// choisi pour le texte : c'est lui qui porte la voix.
+  void _ouvrirVocal(BuildContext context) {
+    final cfg = ref.read(configIAProvider);
+    final cleGemini = (cfg.cles[FournisseurIA.gemini] ?? '').trim();
+    if (cleGemini.isEmpty) {
+      _showError(
+          'Le mode vocal fonctionne avec Gemini Live : renseignez une clé '
+          'Gemini dans Paramètres → Assistant IA, même si vous utilisez Claude '
+          'pour le texte.');
+      return;
+    }
+    context.push('/assistant/vocal');
   }
 
   void _retourSecurise(BuildContext context) {
@@ -769,7 +785,12 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                 tooltip: 'Arrêter la lecture',
               ),
             IconButton(
-              icon: const Icon(Icons.add_comment_rounded),
+              icon: const Icon(Icons.graphic_eq_rounded),
+              onPressed: () => _ouvrirVocal(context),
+              tooltip: 'Mode vocal',
+            ),
+            IconButton(
+              icon: const Icon(Icons.add_comment_outlined),
               onPressed: () =>
                   ref.read(chatSessionsProvider.notifier).createNewSession(),
               tooltip: 'Nouvelle conversation',
@@ -840,6 +861,7 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                     messages.isEmpty
                         ? _WelcomeSection(
                             config: cfg,
+                            onVocal: () => _ouvrirVocal(context),
                             onSelectPrompt: (prompt) {
                               _controller.text = prompt;
                               _sendMessage();
@@ -864,55 +886,7 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                                       _regenererDerniereReponse(messages),
                                 );
                               }
-                              return Align(
-                                alignment: Alignment.centerLeft,
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: Espace.md,
-                                    vertical: Espace.sm + 2,
-                                  ),
-                                  margin:
-                                      const EdgeInsets.only(top: Espace.xs),
-                                  decoration: BoxDecoration(
-                                    color: scheme.surfaceContainerHigh,
-                                    borderRadius:
-                                        BorderRadius.circular(Rayon.md),
-                                    border: Border.all(
-                                      color: scheme.outlineVariant
-                                          .withValues(alpha: 0.5),
-                                    ),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      SizedBox(
-                                        width: 16,
-                                        height: 16,
-                                        child: CircularProgressIndicator(
-                                          strokeWidth: 2.2,
-                                          color: scheme.primary,
-                                        ),
-                                      ),
-                                      const SizedBox(width: Espace.sm),
-                                      Flexible(
-                                        child: Text(
-                                          _etape == null
-                                              ? 'L\'assistant réfléchit…'
-                                              : 'Consultation : $_etape',
-                                          maxLines: 2,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: theme.textTheme.bodySmall
-                                              ?.copyWith(
-                                            fontStyle: FontStyle.italic,
-                                            color: scheme.onSurfaceVariant,
-                                            fontWeight: FontWeight.w500,
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              );
+                              return _IndicateurReflexion(etape: _etape);
                             },
                           ),
 
@@ -934,22 +908,19 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                 ),
               ),
 
-              // Barre de Saisie moderne
+              // ── Barre de saisie ──
+              // Une pilule ; à droite, le bouton vocal quand le champ est
+              // vide, le bouton d'envoi dès qu'on écrit.
               Container(
-                padding: const EdgeInsets.all(Espace.sm + 2),
+                padding: const EdgeInsets.fromLTRB(
+                    Espace.md, Espace.sm, Espace.md, Espace.md),
                 decoration: BoxDecoration(
                   color: scheme.surface,
                   border: Border(
-                      top: BorderSide(
-                          color:
-                              scheme.outlineVariant.withValues(alpha: 0.6))),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withValues(alpha: 0.04),
-                      blurRadius: 10,
-                      offset: const Offset(0, -3),
+                    top: BorderSide(
+                      color: scheme.outlineVariant.withValues(alpha: 0.4),
                     ),
-                  ],
+                  ),
                 ),
                 child: Row(
                   crossAxisAlignment: CrossAxisAlignment.end,
@@ -957,11 +928,8 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                     Expanded(
                       child: Container(
                         decoration: BoxDecoration(
-                          color: scheme.surfaceContainerLow,
-                          borderRadius: BorderRadius.circular(Rayon.lg),
-                          border: Border.all(
-                            color: scheme.outlineVariant.withValues(alpha: 0.6),
-                          ),
+                          color: scheme.surfaceContainerHigh,
+                          borderRadius: BorderRadius.circular(Rayon.xl),
                         ),
                         child: TextField(
                           controller: _controller,
@@ -971,68 +939,51 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
                           textInputAction: TextInputAction.send,
                           onSubmitted: (_) => _sendMessage(),
                           decoration: InputDecoration(
-                            hintText: 'Posez une question à l\'IA…',
+                            hintText: 'Demandez-moi quelque chose…',
                             hintStyle: theme.textTheme.bodyMedium?.copyWith(
-                              color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                              color: scheme.onSurfaceVariant
+                                  .withValues(alpha: 0.7),
                             ),
                             filled: false,
                             contentPadding: const EdgeInsets.symmetric(
-                              horizontal: Espace.md,
-                              vertical: Espace.sm + 2,
+                              horizontal: 18,
+                              vertical: 13,
                             ),
                             border: InputBorder.none,
-                            suffixIcon: ValueListenableBuilder<TextEditingValue>(
-                              valueListenable: _controller,
-                              builder: (context, value, child) {
-                                if (value.text.isEmpty) {
-                                  return const SizedBox.shrink();
-                                }
-                                return IconButton(
-                                  icon: const Icon(Icons.clear_rounded,
-                                      size: 18),
-                                  onPressed: () => _controller.clear(),
-                                );
-                              },
-                            ),
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
                           ),
                         ),
                       ),
                     ),
-                    const SizedBox(width: Espace.xs + 2),
-                    Container(
-                      height: 48,
-                      width: 48,
-                      decoration: BoxDecoration(
-                        gradient: isThinking
-                            ? null
-                            : LinearGradient(
-                                colors: [scheme.primary, scheme.tertiary],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                        color: isThinking ? scheme.surfaceContainerHigh : null,
-                        borderRadius: BorderRadius.circular(Rayon.pilule),
-                        boxShadow: isThinking
-                            ? null
-                            : [
-                                BoxShadow(
-                                  color: scheme.primary.withValues(alpha: 0.3),
-                                  blurRadius: 8,
-                                  offset: const Offset(0, 3),
+                    const SizedBox(width: Espace.sm),
+                    ValueListenableBuilder<TextEditingValue>(
+                      valueListenable: _controller,
+                      builder: (context, value, _) {
+                        final aDuTexte = value.text.trim().isNotEmpty;
+                        return AnimatedSwitcher(
+                          duration: Duree.rapide,
+                          transitionBuilder: (child, anim) => ScaleTransition(
+                            scale: anim,
+                            child: child,
+                          ),
+                          child: aDuTexte
+                              ? _BoutonRond(
+                                  key: const ValueKey('envoyer'),
+                                  icone: Icons.arrow_upward_rounded,
+                                  actif: !isThinking,
+                                  onTap: isThinking ? null : _sendMessage,
+                                  tooltip: 'Envoyer',
+                                )
+                              : _BoutonRond(
+                                  key: const ValueKey('vocal'),
+                                  icone: Icons.graphic_eq_rounded,
+                                  actif: true,
+                                  onTap: () => _ouvrirVocal(context),
+                                  tooltip: 'Mode vocal',
                                 ),
-                              ],
-                      ),
-                      child: IconButton(
-                        icon: Icon(
-                          Icons.send_rounded,
-                          color: isThinking
-                              ? scheme.onSurfaceVariant.withValues(alpha: 0.5)
-                              : Colors.white,
-                          size: 20,
-                        ),
-                        onPressed: isThinking ? null : () => _sendMessage(),
-                        tooltip: 'Envoyer',
-                      ),
+                        );
+                      },
                     ),
                   ],
                 ),
@@ -1045,13 +996,165 @@ class _AssistantPageState extends ConsumerState<AssistantPage> {
   }
 }
 
+/// Le bouton rond à droite du champ : envoi ou vocal.
+class _BoutonRond extends StatelessWidget {
+  final IconData icone;
+  final bool actif;
+  final VoidCallback? onTap;
+  final String tooltip;
+
+  const _BoutonRond({
+    super.key,
+    required this.icone,
+    required this.actif,
+    required this.onTap,
+    required this.tooltip,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Tooltip(
+      message: tooltip,
+      child: Container(
+        width: 48,
+        height: 48,
+        decoration: BoxDecoration(
+          shape: BoxShape.circle,
+          gradient: actif
+              ? LinearGradient(
+                  colors: [scheme.primary, scheme.tertiary],
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                )
+              : null,
+          color: actif ? null : scheme.surfaceContainerHigh,
+          boxShadow: actif
+              ? [
+                  BoxShadow(
+                    color: scheme.primary.withValues(alpha: 0.3),
+                    blurRadius: 10,
+                    offset: const Offset(0, 4),
+                  ),
+                ]
+              : null,
+        ),
+        child: Material(
+          color: Colors.transparent,
+          shape: const CircleBorder(),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: onTap,
+            child: Icon(
+              icone,
+              color: actif
+                  ? Colors.white
+                  : scheme.onSurfaceVariant.withValues(alpha: 0.5),
+              size: 22,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// « L'assistant réfléchit… » — trois points qui ondulent, et l'outil en
+/// cours quand il y en a un.
+class _IndicateurReflexion extends StatefulWidget {
+  final String? etape;
+  const _IndicateurReflexion({required this.etape});
+
+  @override
+  State<_IndicateurReflexion> createState() => _IndicateurReflexionState();
+}
+
+class _IndicateurReflexionState extends State<_IndicateurReflexion>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _c = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 1100),
+  )..repeat();
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final scheme = theme.colorScheme;
+    return Align(
+      alignment: Alignment.centerLeft,
+      child: Container(
+        margin: const EdgeInsets.only(top: Espace.xs, bottom: Espace.sm),
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerLow,
+          borderRadius: const BorderRadius.only(
+            topLeft: Radius.circular(18),
+            topRight: Radius.circular(18),
+            bottomRight: Radius.circular(18),
+            bottomLeft: Radius.circular(6),
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            AnimatedBuilder(
+              animation: _c,
+              builder: (_, __) => Row(
+                mainAxisSize: MainAxisSize.min,
+                children: List.generate(3, (i) {
+                  final t = ((_c.value - i * 0.18) % 1.0);
+                  final y = -4 * math.sin(math.pi * t.clamp(0.0, 0.5) * 2);
+                  return Transform.translate(
+                    offset: Offset(0, y),
+                    child: Container(
+                      width: 7,
+                      height: 7,
+                      margin: const EdgeInsets.symmetric(horizontal: 2.5),
+                      decoration: BoxDecoration(
+                        color: scheme.primary.withValues(alpha: 0.5 + 0.5 * (1 - t)),
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                  );
+                }),
+              ),
+            ),
+            if (widget.etape != null) ...[
+              const SizedBox(width: Espace.sm),
+              Flexible(
+                child: Text(
+                  widget.etape!,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    color: scheme.onSurfaceVariant,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
 // --- Section de Bienvenue & Suggestions ---
 class _WelcomeSection extends StatelessWidget {
   final ValueChanged<String> onSelectPrompt;
+  final VoidCallback onVocal;
   final ConfigIA config;
 
   const _WelcomeSection({
     required this.onSelectPrompt,
+    required this.onVocal,
     required this.config,
   });
 
@@ -1067,162 +1170,253 @@ class _WelcomeSection extends StatelessWidget {
             .libelle ??
         config.modele;
 
-    final categories = [
+    final suggestions = [
       (
-        title: '📊 Bilan & Ventes',
-        icon: Icons.trending_up_rounded,
-        prompts: [
-          'Quel est mon chiffre d\'affaires ce mois-ci ?',
-          'Quelles sont mes meilleures ventes ?',
-          'Rapport rapide du magasin',
-        ]
+        icone: Icons.trending_up_rounded,
+        titre: 'Chiffre du mois',
+        texte: 'Quel est mon chiffre d\'affaires ce mois-ci ?',
       ),
       (
-        title: '📦 Stocks & Produits',
-        icon: Icons.inventory_2_rounded,
-        prompts: [
-          'Quels articles sont bientôt en rupture ?',
-          'Quel est l\'état actuel du stock ?',
-        ]
+        icone: Icons.inventory_2_rounded,
+        titre: 'Ruptures',
+        texte: 'Quels articles sont bientôt en rupture ?',
       ),
       (
-        title: '👥 Clients & Créances',
-        icon: Icons.people_alt_rounded,
-        prompts: [
-          'Quels clients ont des créances impayées ?',
-          'Quels sont mes clients les plus fidèles ?',
-        ]
+        icone: Icons.account_balance_wallet_rounded,
+        titre: 'Créances',
+        texte: 'Quels clients ont des créances impayées ?',
+      ),
+      (
+        icone: Icons.star_rounded,
+        titre: 'Meilleures ventes',
+        texte: 'Quelles sont mes meilleures ventes ?',
+      ),
+      (
+        icone: Icons.payments_rounded,
+        titre: 'Bénéfice',
+        texte: 'Est-ce que je gagne de l\'argent ce mois-ci ?',
+      ),
+      (
+        icone: Icons.summarize_rounded,
+        titre: 'Rapport',
+        texte: 'Rapport rapide du magasin',
       ),
     ];
 
     return SingleChildScrollView(
-      padding: const EdgeInsets.all(Espace.page),
+      padding: const EdgeInsets.fromLTRB(
+          Espace.page, Espace.lg, Espace.page, Espace.page),
       child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          const SizedBox(height: Espace.md),
-
-          // Glowing Hero Avatar
+          // ── Carte d'accueil ──
           Container(
-            width: 76,
-            height: 76,
+            padding: const EdgeInsets.all(Espace.lg),
             decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(Rayon.xl),
               gradient: LinearGradient(
-                colors: [scheme.primary, scheme.tertiary],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
+                colors: [
+                  scheme.primary,
+                  Color.lerp(scheme.primary, scheme.tertiary, 0.7)!,
+                ],
               ),
-              shape: BoxShape.circle,
               boxShadow: [
                 BoxShadow(
-                  color: scheme.primary.withValues(alpha: 0.35),
-                  blurRadius: 20,
-                  spreadRadius: 2,
-                  offset: const Offset(0, 6),
+                  color: scheme.primary.withValues(alpha: 0.30),
+                  blurRadius: 24,
+                  offset: const Offset(0, 10),
                 ),
               ],
             ),
-            child: const Icon(
-              Icons.auto_awesome_rounded,
-              size: 38,
-              color: Colors.white,
-            ),
-          ),
-          const SizedBox(height: Espace.md),
-
-          Text(
-            'Assistant Intelligent E.A.S',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.titleLarge?.copyWith(
-              fontWeight: FontWeight.w800,
-              letterSpacing: -0.3,
-            ),
-          ),
-          const SizedBox(height: Espace.xs),
-
-          // Provider & Model Badge
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-            decoration: BoxDecoration(
-              color: scheme.primary.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(Rayon.pilule),
-              border: Border.all(
-                color: scheme.primary.withValues(alpha: 0.25),
-              ),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Container(
-                  width: 8,
-                  height: 8,
-                  decoration: BoxDecoration(
-                    color: config.utilisable
-                        ? CouleursMetier.clair.succes
-                        : scheme.error,
-                    shape: BoxShape.circle,
-                  ),
-                ),
-                const SizedBox(width: 6),
-                Text(
-                  '${providerInfo?.nom ?? "IA"} • $modelName',
-                  style: theme.textTheme.bodySmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: scheme.primary,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: Espace.sm),
-
-          Text(
-            'Posez des questions en langage naturel pour analyser les ventes, stocks, clients et la trésorerie de votre entreprise.',
-            textAlign: TextAlign.center,
-            style: theme.textTheme.bodyMedium?.copyWith(
-              color: scheme.onSurfaceVariant,
-            ),
-          ),
-
-          const SizedBox(height: Espace.xl),
-
-          // Suggestions par catégories
-          for (final cat in categories) ...[
-            Align(
-              alignment: Alignment.centerLeft,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: Espace.xs, left: 4),
-                child: Row(
+                Row(
                   children: [
-                    Icon(cat.icon, size: 16, color: scheme.primary),
-                    const SizedBox(width: 6),
-                    Text(
-                      cat.title,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        fontWeight: FontWeight.bold,
-                        color: scheme.primary,
+                    Container(
+                      width: 44,
+                      height: 44,
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.18),
+                        borderRadius: BorderRadius.circular(Rayon.md),
+                      ),
+                      child: const Icon(Icons.auto_awesome_rounded,
+                          color: Colors.white, size: 24),
+                    ),
+                    const SizedBox(width: Espace.md),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Bonjour 👋',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 20,
+                              fontWeight: FontWeight.w800,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          Text(
+                            '${providerInfo?.nom ?? "IA"} · $modelName',
+                            style: TextStyle(
+                              color: Colors.white.withValues(alpha: 0.8),
+                              fontSize: 12,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
                 ),
+                const SizedBox(height: Espace.md),
+                Text(
+                  'Je connais vos ventes, votre stock, vos clients et votre '
+                  'trésorerie. Posez-moi une question, ou parlez-moi.',
+                  style: TextStyle(
+                    color: Colors.white.withValues(alpha: 0.92),
+                    fontSize: 14,
+                    height: 1.4,
+                  ),
+                ),
+                const SizedBox(height: Espace.lg),
+                // Le bouton vocal, en évidence : c'est la nouveauté, et c'est
+                // le geste naturel au comptoir, les mains prises.
+                Material(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(Rayon.pilule),
+                  clipBehavior: Clip.antiAlias,
+                  child: InkWell(
+                    onTap: onVocal,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 18, vertical: 13),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.graphic_eq_rounded,
+                              color: scheme.primary, size: 22),
+                          const SizedBox(width: 10),
+                          Text(
+                            'Parler à l\'assistant',
+                            style: TextStyle(
+                              color: scheme.primary,
+                              fontWeight: FontWeight.w800,
+                              fontSize: 15,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          if (!config.utilisable) ...[
+            const SizedBox(height: Espace.md),
+            Container(
+              padding: const EdgeInsets.all(Espace.md),
+              decoration: BoxDecoration(
+                color: context.metier.alerteFond,
+                borderRadius: BorderRadius.circular(Rayon.md),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.key_off_rounded, color: context.metier.alerte),
+                  const SizedBox(width: Espace.sm),
+                  Expanded(
+                    child: Text(
+                      'Aucune clé API : l\'assistant ne peut pas répondre. '
+                      'Paramètres → Assistant IA.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: scheme.onSurface,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
-            Wrap(
-              spacing: Espace.xs,
-              runSpacing: Espace.xs,
-              children: cat.prompts.map((prompt) {
-                return ActionChip(
-                  avatar: Icon(
-                    Icons.lightbulb_outline_rounded,
-                    size: 15,
-                    color: scheme.primary,
-                  ),
-                  label: Text(prompt),
-                  onPressed: () => onSelectPrompt(prompt),
-                );
-              }).toList(),
-            ),
-            const SizedBox(height: Espace.md),
           ],
+
+          const SizedBox(height: Espace.xl),
+          Padding(
+            padding: const EdgeInsets.only(left: 4, bottom: Espace.sm),
+            child: Text(
+              'POUR COMMENCER',
+              style: theme.textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.2,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
+          GridView.builder(
+            shrinkWrap: true,
+            physics: const NeverScrollableScrollPhysics(),
+            // Hauteur explicite plutôt qu'un ratio : avec une police système
+            // agrandie, le ratio faisait déborder le texte de la tuile.
+            gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 2,
+              mainAxisSpacing: Espace.sm,
+              crossAxisSpacing: Espace.sm,
+              mainAxisExtent: 136,
+            ),
+            itemCount: suggestions.length,
+            itemBuilder: (context, i) {
+              final s = suggestions[i];
+              return Material(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(Rayon.lg),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: () => onSelectPrompt(s.texte),
+                  child: Padding(
+                    padding: const EdgeInsets.all(Espace.md),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(7),
+                          decoration: BoxDecoration(
+                            color: scheme.primary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(Rayon.sm),
+                          ),
+                          child: Icon(s.icone, size: 18, color: scheme.primary),
+                        ),
+                        const Spacer(),
+                        Text(
+                          s.titre,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelLarge?.copyWith(
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Flexible(
+                          child: Text(
+                            s.texte,
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: scheme.onSurfaceVariant,
+                              height: 1.25,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              );
+            },
+          ),
         ],
       ),
     );
@@ -1278,8 +1472,9 @@ class _MessageBubbleState extends State<_MessageBubble> {
         children: [
           if (!isUser) ...[
             Container(
-              width: 34,
-              height: 34,
+              width: 28,
+              height: 28,
+              margin: const EdgeInsets.only(top: 2),
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   colors: [scheme.primary, scheme.tertiary],
@@ -1287,21 +1482,14 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   end: Alignment.bottomRight,
                 ),
                 shape: BoxShape.circle,
-                boxShadow: [
-                  BoxShadow(
-                    color: scheme.primary.withValues(alpha: 0.25),
-                    blurRadius: 8,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
               ),
               child: const Icon(
                 Icons.auto_awesome_rounded,
-                size: 18,
+                size: 15,
                 color: Colors.white,
               ),
             ),
-            const SizedBox(width: Espace.xs + 2),
+            const SizedBox(width: Espace.sm),
           ],
 
           Flexible(
@@ -1315,29 +1503,17 @@ class _MessageBubbleState extends State<_MessageBubble> {
                   decoration: BoxDecoration(
                     color: isUser
                         ? scheme.primary
-                        : scheme.surfaceContainerHigh,
+                        : scheme.surfaceContainerLow,
                     borderRadius: BorderRadius.only(
                       topLeft: const Radius.circular(Rayon.lg),
                       topRight: const Radius.circular(Rayon.lg),
                       bottomLeft: isUser
                           ? const Radius.circular(Rayon.lg)
-                          : const Radius.circular(4),
+                          : const Radius.circular(6),
                       bottomRight: isUser
-                          ? const Radius.circular(4)
+                          ? const Radius.circular(6)
                           : const Radius.circular(Rayon.lg),
                     ),
-                    border: isUser
-                        ? null
-                        : Border.all(
-                            color: scheme.outlineVariant.withValues(alpha: 0.5),
-                          ),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withValues(alpha: 0.04),
-                        blurRadius: 10,
-                        offset: const Offset(0, 3),
-                      ),
-                    ],
                   ),
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

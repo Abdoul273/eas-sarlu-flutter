@@ -87,6 +87,17 @@ class SyncEngine {
   /// cours. Vidé à chaque cycle : ils sont remontés à l'utilisateur une fois.
   final Set<String> _refusRecus = {};
 
+  /// Le prochain cycle doit rapatrier l'instantané, même si la version n'a pas
+  /// bougé.
+  ///
+  /// Un conflit ne fait PAS avancer la version du serveur : rien n'y a été
+  /// écrit. Or c'est cette version qui décide s'il faut rapatrier. Après un
+  /// arbitrage, le téléphone se retrouvait donc à la même version que le
+  /// serveur, ne rapatriait rien, et gardait sa fiche périmée — avec sa
+  /// révision périmée. La sauvegarde suivante rouvrait le même conflit, et
+  /// ainsi de suite, sans fin.
+  bool _recuperationForcee = false;
+
   bool _demarre = false;
   StreamSubscription? _abonnementReseau;
   StreamSubscription? _abonnementFile;
@@ -161,6 +172,15 @@ class SyncEngine {
     unawaited(_cycle());
   }
 
+  /// Réclame un cycle qui rapatrie l'instantané quoi qu'il arrive.
+  ///
+  /// À employer après l'arbitrage d'un conflit : c'est le seul moyen de sortir
+  /// d'un désaccord de révision, puisque le serveur n'a pas bougé.
+  void demanderRecuperationComplete() {
+    _recuperationForcee = true;
+    demanderSynchro();
+  }
+
   /// Cycle immédiat, attendu par l'appelant. Utilisé par le geste « tirer pour
   /// rafraîchir ».
   Future<void> forceSyncCycle() async {
@@ -205,7 +225,10 @@ class SyncEngine {
       // Un refus force la reprise de l'instantané, même si rien n'a été
       // appliqué : c'est ce qui efface de l'écran l'opération que le serveur
       // n'a pas voulue.
-      await _tirerSiNecessaire(forcer: aPousse || _refusRecus.isNotEmpty);
+      final forcerRecuperation = _recuperationForcee;
+      _recuperationForcee = false;
+      await _tirerSiNecessaire(
+          forcer: aPousse || _refusRecus.isNotEmpty || forcerRecuperation);
 
       if (_refusRecus.isNotEmpty) {
         _syncState.signalerRefus(_refusRecus.toList());
@@ -262,45 +285,78 @@ class SyncEngine {
 
       final paquet = enAttente.take(_taillePaquet).toList();
       final opsNormales = <OpQueueData>[];
+      final nouveauxConflitsEntreprise = <ConflitsCompanion>[];
 
       for (final op in paquet) {
         if (op.type == 'entreprise') {
           try {
             final payload = jsonDecode(op.payloadJson) as Map<String, dynamic>;
-            final entData = payload['record'] ?? payload;
-            final resp = await _apiClient.dio.post(kDataEntreprise, data: entData);
-            final respMap = resp.data is Map ? Map<String, dynamic>.from(resp.data as Map) : null;
-            final entRes = respMap?['entreprise'] ?? respMap?['record'];
-            if (entRes != null && entRes is Map<String, dynamic>) {
-              final existingEnt = await _stores.getEntreprise();
-              if (existingEnt != null) {
-                final mergedJson = {
-                  ...existingEnt.toJson(),
-                  if (entRes['_rev'] != null) '_rev': entRes['_rev'],
-                  if (entRes['_updatedAt'] != null) '_updatedAt': entRes['_updatedAt'],
-                  if (entRes['_updatedBy'] != null) '_updatedBy': entRes['_updatedBy'],
-                };
-                // Si le serveur a renvoyé un logo, on l'utilise, sinon on garde le local.
-                if (entRes['logo'] != null && entRes['logo'].toString().isNotEmpty) {
-                  mergedJson['logo'] = entRes['logo'];
-                }
-                if (entRes['signatureImage'] != null && entRes['signatureImage'].toString().isNotEmpty) {
-                  mergedJson['signatureImage'] = entRes['signatureImage'];
-                }
-                await _stores.upsert('entreprise', Entreprise.fromJson(mergedJson));
-              } else {
-                await _stores.upsert('entreprise', Entreprise.fromJson(entRes));
-              }
+            final entData = Map<String, dynamic>.from(
+                (payload['record'] ?? payload) as Map);
+
+            // La fiche va SOUS la clé « entreprise », et la révision d'origine
+            // sous « baseRev » : c'est la forme qu'attend
+            // `POST /data/entreprise`, et c'est celle qu'emploie l'application
+            // web (`api.saveEntreprise`).
+            //
+            // On envoyait jusqu'ici la fiche à plat. Le serveur lisait alors
+            // `entreprise` : indéfini — enregistrait un objet VIDE, répondait
+            // « ok » et faisait avancer la version. Le téléphone qui venait
+            // d'écrire gardait sa copie locale et ne voyait rien ; tous les
+            // autres, application web comprise, recevaient une fiche effacée.
+            // C'est ce qui donnait « ça ne s'applique que chez celui qui a
+            // modifié » — en réalité la fiche était perdue pour tout le monde
+            // sauf lui.
+            final resp = await _apiClient.dio.post(kDataEntreprise, data: {
+              'entreprise': entData,
+              if (entData['_rev'] != null) 'baseRev': entData['_rev'],
+            });
+
+            final respMap = resp.data is Map
+                ? Map<String, dynamic>.from(resp.data as Map)
+                : null;
+            final entRes = respMap?['record'] ?? respMap?['entreprise'];
+            // La fiche renvoyée fait foi, entièrement. Elle est complète — le
+            // serveur retourne ce qu'il vient d'enregistrer, images comprises —
+            // et c'est elle qui porte la nouvelle révision. La fusion prudente
+            // qui vivait ici n'existait que pour rattraper la réponse vide de
+            // l'envoi mal formé ; elle masquait le défaut au lieu de le dire.
+            if (entRes is Map) {
+              await _stores.upsert('entreprise',
+                  Entreprise.fromJson(Map<String, dynamic>.from(entRes)));
             }
             await _opQueue.markApplied(op.id);
             quelqueChoseApplique = true;
+          } on ApiException catch (e) {
+            // 409 : quelqu'un d'autre a modifié la fiche entre-temps. Rejouer
+            // l'opération se heurterait au même refus à chaque retour de
+            // réseau, indéfiniment. Elle sort donc de la file et rejoint le
+            // registre des conflits, où l'utilisateur arbitre — même règle que
+            // pour les autres types.
+            if (e.statusCode == 409) {
+              nouveauxConflitsEntreprise.add(ConflitsCompanion.insert(
+                id: op.id,
+                type: 'entreprise',
+                libelle: op.libelle ?? 'Fiche entreprise',
+                tentativeJson: op.payloadJson,
+                serveurJson: jsonEncode(e.responseData?['current'] ?? const {}),
+                detecteLe: DateTime.now().toIso8601String(),
+              ));
+              await _opQueue.markApplied(op.id);
+            } else {
+              await _opQueue.markFailed(
+                  op.id, 'Erreur de synchronisation entreprise: ${e.messageApi}');
+            }
           } catch (e) {
-            await _opQueue.markFailed(op.id, 'Erreur de synchronisation entreprise: $e');
+            await _opQueue.markFailed(
+                op.id, 'Erreur de synchronisation entreprise: $e');
           }
         } else {
           opsNormales.add(op);
         }
       }
+
+      await _conflits.ajouter(nouveauxConflitsEntreprise);
 
       if (opsNormales.isNotEmpty) {
         final operations = opsNormales
@@ -826,6 +882,12 @@ class SyncEngine {
           List<OpQueueData> paquet, Map<String, dynamic> resultat,
           [List<ConflitsCompanion>? conflits]) =>
       _traiterResultat(paquet, resultat, conflits ?? []);
+
+  /// Envoi de la file. C'est l'étape qui met en forme le corps des requêtes —
+  /// la fiche entreprise s'y est envoyée trois mois sous une forme que le
+  /// serveur ne lisait pas.
+  @visibleForTesting
+  Future<bool> debugPousser() => _pousser();
 
   @visibleForTesting
   Future<void> debugAppliquerInstantane(Map<String, dynamic> donnees) =>
