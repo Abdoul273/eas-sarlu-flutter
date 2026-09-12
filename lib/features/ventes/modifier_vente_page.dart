@@ -7,6 +7,7 @@ import '../../app/format.dart';
 import '../../app/ui_kit.dart';
 import '../../app/theme.dart';
 import '../../core/db/stores.dart';
+import '../../core/finance/regles_vente.dart';
 import '../../core/models/models.dart';
 import '../../core/sync/op_queue.dart';
 import '../dashboard/dashboard_page.dart';
@@ -214,14 +215,15 @@ class _ModifierVentePageState extends ConsumerState<ModifierVentePage> {
 
   void _updateQuantite(LignePanier ligne, int qte) {
     final stockMax = stockDisponible(ligne.article) + ligne.quantite;
-    final qteValide = qte.clamp(1, stockMax > 0 ? stockMax : 1);
-    if (qte > stockMax && stockMax > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Quantité limitée au stock disponible ($stockMax ${ligne.article.unite})'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+    if (stockMax <= 0) {
+      _avertir('${ligne.article.nom} : plus rien en stock.');
+      _supprimerLigne(ligne.id);
+      return;
+    }
+    final qteValide = qte.clamp(1, stockMax);
+    if (qte > stockMax) {
+      _avertir('Quantité limitée au stock disponible '
+          '(${fmtNombre(stockMax)} ${ligne.article.unite})');
     }
     setState(() => ligne.quantite = qteValide);
   }
@@ -313,15 +315,27 @@ class _ModifierVentePageState extends ConsumerState<ModifierVentePage> {
           (deltas[nouvelle.article.id] ?? 0) + nouvelle.quantite;
     }
 
-    for (final entree in deltas.entries) {
-      if (entree.value == 0) continue;
-      final article = await stores.getArticle(entree.key);
-      if (article == null) continue;
-      // Jamais de stock négatif à l'écran : le serveur borne lui aussi à zéro,
-      // et laisser passer un négatif ferait diverger les deux affichages.
-      final nouveauStock = article.stock - entree.value;
-      await stores.upsert(
-          'article', article.copyWith(stock: nouveauStock < 0 ? 0 : nouveauStock));
+    // Dernier rempart, sur les stocks relus à l'instant : ce que la vente
+    // avait sorti revient au pot, puis on vérifie que le nouveau panier tient.
+    final frais = <String, Article>{};
+    for (final id in deltas.keys) {
+      final a = await stores.getArticle(id);
+      if (a != null) frais[id] = a;
+    }
+    final problemes = problemesVente(
+      [for (final l in _panier) DemandeLigne(l.article.id, l.quantite, l.prixUnitaire)],
+      frais,
+      credit: _dejaSorti,
+    );
+    if (problemes.isNotEmpty) {
+      setState(() {
+        for (final l in _panier) {
+          final a = frais[l.article.id];
+          if (a != null) l.article = a;
+        }
+      });
+      _avertir(problemes.map((p) => p.message).join('\n'));
+      return;
     }
 
     final venteMaj = widget.venteInitiale.copyWith(
@@ -330,18 +344,29 @@ class _ModifierVentePageState extends ConsumerState<ModifierVentePage> {
       totalHT: totalNet,
       totalNet: totalNet,
     );
-    await stores.upsert('vente', venteMaj);
 
-    if (factureLiee != null) {
-      await stores.upsert(
-        'facture',
-        factureLiee.copyWith(
-          clientId: _clientSelectionne?.id ?? '',
-          montantHT: totalNet,
-          montantTTC: totalNet,
-        ),
-      );
-    }
+    await stores.transaction(() async {
+      for (final entree in deltas.entries) {
+        if (entree.value == 0) continue;
+        final article = frais[entree.key];
+        if (article == null) continue;
+        final stock = entree.value > 0
+            ? stockApresSortie(article.stock, entree.value)
+            : stockApresRetour(article.stock, -entree.value);
+        await stores.upsert('article', article.copyWith(stock: stock));
+      }
+      await stores.upsert('vente', venteMaj);
+      if (factureLiee != null) {
+        await stores.upsert(
+          'facture',
+          factureLiee.copyWith(
+            clientId: _clientSelectionne?.id ?? '',
+            montantHT: totalNet,
+            montantTTC: totalNet,
+          ),
+        );
+      }
+    });
 
     // Opération DÉDIÉE, et non « vente ».
     //
@@ -664,13 +689,18 @@ class _ModifierVentePageState extends ConsumerState<ModifierVentePage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'Total Panier (${_panier.length} article${_panier.length > 1 ? 's' : ''})',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: scheme.onSurfaceVariant,
+                      Expanded(
+                        child: Text(
+                          'Total (${_panier.length} article${_panier.length > 1 ? 's' : ''})',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: scheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
+                      const SizedBox(width: Espace.sm),
                       Text(
                         fmtGNF(totalHT),
                         style: theme.textTheme.titleLarge?.copyWith(

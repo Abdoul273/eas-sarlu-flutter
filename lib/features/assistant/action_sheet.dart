@@ -113,7 +113,15 @@ class _FicheActionsState extends ConsumerState<_FicheActions> {
         final v = _valeur(i, c);
         if (v.isNotEmpty) params[c.nom] = v;
       }
-      completees.add(AppelAction(a.type, params, a.libelle));
+      // C'est le seul endroit qui transforme une proposition IA en ordre
+      // exécutable. Une transcription vocale, même si elle contient « oui »,
+      // n'est jamais une confirmation : il faut cet appui explicite.
+      completees.add(AppelAction(
+        a.type,
+        params,
+        a.libelle,
+        confirmationHumaine: true,
+      ));
     }
     Navigator.pop(context, completees);
   }

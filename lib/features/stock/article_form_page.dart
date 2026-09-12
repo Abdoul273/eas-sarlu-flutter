@@ -566,6 +566,32 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
       return;
     }
 
+    // Vendre sous le prix d'achat n'est pas interdit — une liquidation se
+    // décide —, mais ça ne se fait pas par une faute de frappe. On demande.
+    final prixAchat = parseMontantClean(_prixAchatCtrl.text);
+    final prixVente = parseMontantClean(_prixVenteCtrl.text);
+    if (prixAchat > 0 && prixVente < prixAchat) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Vente à perte ?'),
+          content: Text(
+              'Le prix de vente (${fmtGNF(prixVente)}) est inférieur au prix '
+              'd\'achat (${fmtGNF(prixAchat)}). Chaque vente de cet article '
+              'fera perdre ${fmtGNF(prixAchat - prixVente)}.'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Corriger')),
+            AppButton(
+                label: 'Enregistrer quand même',
+                onPressed: () => Navigator.pop(ctx, true)),
+          ],
+        ),
+      );
+      if (ok != true || !mounted) return;
+    }
+
     setState(() => _isLoading = true);
 
     final creation = _editId == null;
@@ -925,6 +951,11 @@ class _ArticleFormPageState extends ConsumerState<ArticleFormPage> {
                               suffixText: 'GNF',
                               prefixIcon: Icon(Icons.shopping_bag_rounded),
                             ),
+                            validator: (v) {
+                              if (v == null || v.trim().isEmpty) return null;
+                              if (parseMontantClean(v) < 0) return '≥ 0';
+                              return null;
+                            },
                           ),
                         ),
                       ],

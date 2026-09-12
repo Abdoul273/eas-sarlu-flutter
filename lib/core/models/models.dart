@@ -97,7 +97,10 @@ class Article {
       unite: json['unite'] as String? ?? '',
       prixAchat: _entier(json['prixAchat']),
       prixVente: _entier(json['prixVente']),
-      stock: _entier(json['stock']),
+      // Un stock négatif n'a pas de sens physique : il ne peut venir que
+      // d'une écriture qui a contourné les règles. Borné ici, il ne
+      // s'affichera plus nulle part — et le serveur borne de même.
+      stock: _entier(json['stock']) < 0 ? 0 : _entier(json['stock']),
       stockMin: _entier(json['stockMin']),
       fournisseur: json['fournisseur'] as String? ?? '',
       photo: json['photo'] as String? ?? '',

@@ -479,11 +479,17 @@ class _MouvementSheetState extends ConsumerState<MouvementSheet> {
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    'Nouveau stock estimé',
-                    style: theme.textTheme.titleSmall,
+                  Expanded(
+                    child: Text(
+                      'Nouveau stock',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleSmall,
+                    ),
                   ),
+                  const SizedBox(width: Espace.sm),
                   Row(
+                    mainAxisSize: MainAxisSize.min,
                     children: [
                       Text(
                         '${widget.article.stock}',

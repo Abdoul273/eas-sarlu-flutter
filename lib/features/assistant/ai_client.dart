@@ -833,7 +833,11 @@ class ClientIA {
         final r = await _recherche.chercher(requete, cleSerp,
             annulation: annulation);
         _sources.addAll(r.sources);
-        return r.resume;
+        final instant = r.verifieLe?.toLocal().toIso8601String() ?? 'inconnu';
+        return '''${r.resume}
+
+QUALITÉ DU RELEVÉ : recherche ${r.depuisCache ? 'mise en cache' : 'effectuée'} le $instant ; moteur ${r.moteur.libelle} ; ${r.sources.length} source(s) citée(s).
+RÈGLE : ne présente pas ce relevé comme un prix certain s'il ne donne pas une date de publication, un lieu ou une source locale. Pour une recommandation d'achat ou de prix, exige au moins deux sources indépendantes récentes ; sinon indique « à confirmer par devis fournisseur ».''';
       } on ErreurRecherche catch (e) {
         // Une clé refusée ou un forfait épuisé sont des faits que le modèle
         // doit connaître : il annoncera au commerçant qu'il répond sans web,

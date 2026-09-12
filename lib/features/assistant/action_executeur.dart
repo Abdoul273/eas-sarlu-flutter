@@ -63,6 +63,15 @@ class ExecuteurActions {
           '${verdict.manquants.map((c) => c.libelle).join(', ')}.');
     }
 
+    // Les droits ne suffisent pas : un compte autorisé ne donne pas au modèle
+    // le droit d'écrire seul. Cette barrière est indépendante de l'interface
+    // texte ou vocale et protège toute future entrée vers l'exécuteur.
+    if (verdict.action!.droit != null && !appel.confirmationHumaine) {
+      throw EchecAction(
+        'Cette action doit être relue et confirmée à l’écran par un utilisateur.',
+      );
+    }
+
     final p = appel.params;
     switch (verdict.action!.type) {
       case 'addStock':
@@ -123,9 +132,19 @@ class ExecuteurActions {
           ? 'Saisi via l\'assistant'
           : _txt(p['note']),
     );
+    // Écriture locale AVANT l'envoi, comme la feuille de mouvement : sans
+    // cela, le stock annoncé par l'assistant ne bougeait à l'écran qu'à la
+    // synchronisation suivante, et hors ligne, jamais.
+    await _stores.upsert('mouvement', mouvement);
+    await _stores.upsert(
+      'article',
+      article.copyWith(
+        stock: stockApresMouvement(article.stock, type, mouvement.quantite),
+      ),
+    );
     await _queue.enqueue('mouvement', {'mouvement': mouvement.toJson()});
 
-    final apres = type == 'entrée' ? article.stock + q : article.stock - q;
+    final apres = stockApresMouvement(article.stock, type, mouvement.quantite);
     return ResultatAction(
         '${article.nom} : ${type == 'entrée' ? '+' : '−'}${fmtNombre(q)} '
         '${article.unite} (stock ${fmtNombre(article.stock)} → '

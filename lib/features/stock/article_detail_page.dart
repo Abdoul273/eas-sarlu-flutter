@@ -512,29 +512,38 @@ class ArticleDetailPage extends ConsumerWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Row(
-                children: [
-                  Icon(
-                    isRupture
-                        ? Icons.error_outline_rounded
-                        : (isStockBas
-                            ? Icons.warning_amber_rounded
-                            : Icons.check_circle_outline_rounded),
-                    size: 16,
-                    color: gaugeColor,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    'Niveau de Stock',
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      fontWeight: FontWeight.bold,
-                      color: scheme.onSurfaceVariant,
+              Expanded(
+                child: Row(
+                  children: [
+                    Icon(
+                      isRupture
+                          ? Icons.error_outline_rounded
+                          : (isStockBas
+                              ? Icons.warning_amber_rounded
+                              : Icons.check_circle_outline_rounded),
+                      size: 16,
+                      color: gaugeColor,
                     ),
-                  ),
-                ],
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        'Niveau de stock',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.labelMedium?.copyWith(
+                          fontWeight: FontWeight.bold,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
+              const SizedBox(width: Espace.sm),
               Text(
-                'Min: ${article.stockMin} ${article.unite}',
+                'Min : ${article.stockMin} ${article.unite}',
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
                 style: theme.textTheme.labelSmall?.copyWith(
                   fontWeight: FontWeight.w600,
                   color: scheme.onSurfaceVariant,
@@ -913,11 +922,15 @@ class ArticleDetailPage extends ConsumerWidget {
                           color: scheme.onSurfaceVariant,
                         ),
                       ),
-                      Text(
-                        '${m.quantiteAvant} ${article.unite} → ${m.quantiteApres} ${article.unite}',
-                        style: theme.textTheme.labelSmall?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: scheme.onSurface,
+                      Flexible(
+                        child: Text(
+                          '${m.quantiteAvant} → ${m.quantiteApres} ${article.unite}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.labelSmall?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: scheme.onSurface,
+                          ),
                         ),
                       ),
                     ],
@@ -1149,6 +1162,20 @@ class ArticleDetailPage extends ConsumerWidget {
         const SnackBar(
             content: Text('La suppression nécessite une connexion active')),
       );
+      return;
+    }
+    if (!context.mounted) return;
+    // On ne supprime pas de la marchandise en la faisant disparaître du
+    // catalogue : ce qu'il reste en dépôt doit d'abord sortir par un
+    // ajustement, pour qu'il en reste une trace.
+    final courant = await ref.read(storesProvider).getArticle(id);
+    if (courant != null && courant.stock > 0) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Il reste ${fmtNombre(courant.stock)} ${courant.unite} '
+            'en stock. Faites d\'abord un ajustement à zéro.'),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ));
       return;
     }
     if (!context.mounted) return;

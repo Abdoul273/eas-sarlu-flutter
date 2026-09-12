@@ -8,6 +8,7 @@ import '../api/endpoints.dart';
 import '../auth/auth_state.dart';
 import '../db/app_database.dart' show OpQueueData, ConflitsCompanion;
 import '../db/stores.dart';
+import '../finance/regles_vente.dart';
 import '../reseau.dart';
 import '../models/activite.dart';
 import '../models/models.dart';
@@ -728,8 +729,11 @@ class SyncEngine {
         for (final ligne in (payload['lignesStock'] as List? ?? const [])) {
           final article = await _stores.getArticle(ligne['articleId']);
           if (article == null) continue;
-          await _stores.upsert('article',
-              article.copyWith(stock: article.stock - (ligne['quantite'] as int)));
+          await _stores.upsert(
+              'article',
+              article.copyWith(
+                  stock: stockApresSortie(
+                      article.stock, ligne['quantite'] as int)));
         }
 
       case 'vente_modification':

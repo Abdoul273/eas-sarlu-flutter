@@ -7,6 +7,7 @@ import '../../app/format.dart';
 import '../../app/ui_kit.dart';
 import '../../app/theme.dart';
 import '../../core/db/stores.dart';
+import '../../core/finance/regles_vente.dart';
 import '../../core/models/models.dart';
 import '../../core/sync/op_queue.dart';
 import '../dashboard/dashboard_page.dart';
@@ -79,6 +80,7 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
       if (client != null && mounted) _choisirClient(client);
     }
 
+    final manques = <String>[];
     if (widget.articlesPreremplis != null &&
         widget.articlesPreremplis!.isNotEmpty) {
       for (final item in widget.articlesPreremplis!) {
@@ -86,8 +88,19 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
         if (aId == null) continue;
         final article = await stores.getArticle(aId);
         if (article != null && mounted) {
-          final qte = (item['quantite'] as int? ?? 1).clamp(1, 999999);
+          final voulu = (item['quantite'] as int? ?? 1).clamp(1, 999999);
           final prix = item['prixUnitaire'] as int? ?? article.prixVente;
+          // Un devis se chiffre sans regarder le dépôt ; la vente, elle, ne
+          // sort que ce qu'il y a. On borne, et on le dit.
+          final dispo = stockDisponible(article);
+          if (dispo <= 0) {
+            manques.add('${article.nom} (plus en stock)');
+            continue;
+          }
+          final qte = voulu > dispo ? dispo : voulu;
+          if (qte < voulu) {
+            manques.add('${article.nom} (${fmtNombre(qte)} sur ${fmtNombre(voulu)})');
+          }
           setState(() {
             _panier.add(LignePanier(
               id: _uuid.v4(),
@@ -98,11 +111,23 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
           });
         }
       }
+      if (manques.isNotEmpty && mounted) {
+        _avertir('Stock insuffisant : ${manques.join(', ')}.');
+      }
     } else if (widget.articleId != null) {
       final article = await stores.getArticle(widget.articleId!);
       if (article != null && mounted) {
         final demandee = widget.quantite ?? 1;
-        final qte = demandee.clamp(1, article.stock > 0 ? article.stock : 1);
+        // Rien en stock : rien au panier. L'ancien `clamp(1, …)` forçait une
+        // unité sur un stock nul — c'est de là que venait le « −1 barre ».
+        if (article.stock <= 0) {
+          _avertir('${article.nom} : plus rien en stock.');
+          return;
+        }
+        final qte = demandee.clamp(1, article.stock);
+        if (qte < demandee) {
+          _avertir('${article.nom} : il ne reste que ${fmtNombre(qte)} ${article.unite}.');
+        }
         setState(() {
           _panier.add(LignePanier(
             id: _uuid.v4(),
@@ -158,16 +183,28 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
 
   void _updateQuantite(LignePanier ligne, int qte) {
     final stockMax = stockDisponible(ligne.article) + ligne.quantite;
-    final qteValide = qte.clamp(1, stockMax > 0 ? stockMax : 1);
-    if (qte > stockMax && stockMax > 0) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text('Quantité limitée au stock disponible ($stockMax ${ligne.article.unite})'),
-          backgroundColor: Theme.of(context).colorScheme.error,
-        ),
-      );
+    if (stockMax <= 0) {
+      // Plus rien à vendre pour cet article : la ligne n'a plus lieu d'être.
+      _avertir('${ligne.article.nom} : plus rien en stock.');
+      _supprimerLigne(ligne.id);
+      return;
+    }
+    final qteValide = qte.clamp(1, stockMax);
+    if (qte > stockMax) {
+      _avertir('Quantité limitée au stock disponible '
+          '(${fmtNombre(stockMax)} ${ligne.article.unite})');
     }
     setState(() => ligne.quantite = qteValide);
+  }
+
+  void _avertir(String message) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(
+        content: Text(message),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ));
   }
 
   void _updatePrix(LignePanier ligne, int prix) {
@@ -246,14 +283,50 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
     final stores = ref.read(storesProvider);
     final opQueue = ref.read(opQueueProvider);
 
+    // Dernier rempart : le stock est relu dans la base au moment d'encaisser,
+    // pas celui affiché à l'ouverture de la page. Entre les deux, une
+    // synchronisation ou une autre vente a pu le faire bouger.
+    final frais = <String, Article>{};
     for (final l in _panier) {
-      final articleMaj =
-          l.article.copyWith(stock: l.article.stock - l.quantite);
-      await stores.upsert('article', articleMaj);
+      final a = await stores.getArticle(l.article.id);
+      if (a != null) frais[a.id] = a;
+    }
+    final problemes = problemesVente(
+      [for (final l in _panier) DemandeLigne(l.article.id, l.quantite, l.prixUnitaire)],
+      frais,
+    );
+    if (problemes.isNotEmpty) {
+      // On remet le panier d'aplomb avec les stocks réels, et on explique.
+      setState(() {
+        for (final l in _panier) {
+          final a = frais[l.article.id];
+          if (a != null) l.article = a;
+        }
+        for (final pb in problemes) {
+          final max = pb.quantiteMax;
+          if (max == null) continue;
+          if (max <= 0) {
+            _panier.removeWhere((l) => l.article.id == pb.articleId);
+          } else {
+            for (final l in _panier.where((l) => l.article.id == pb.articleId)) {
+              if (l.quantite > max) l.quantite = max;
+            }
+          }
+        }
+      });
+      _avertir(problemes.map((p) => p.message).join('\n'));
+      return;
     }
 
-    await stores.upsert('vente', vente);
-    await stores.upsert('facture', facture);
+    await stores.transaction(() async {
+      for (final l in _panier) {
+        final a = frais[l.article.id]!;
+        await stores.upsert(
+            'article', a.copyWith(stock: stockApresSortie(a.stock, l.quantite)));
+      }
+      await stores.upsert('vente', vente);
+      await stores.upsert('facture', facture);
+    });
 
     await opQueue.enqueue('vente', {
       'vente': vente.toJson(),
@@ -593,13 +666,18 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'Total Panier (${_panier.length} article${_panier.length > 1 ? 's' : ''})',
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: scheme.onSurfaceVariant,
+                      Expanded(
+                        child: Text(
+                          'Total (${_panier.length} article${_panier.length > 1 ? 's' : ''})',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.titleMedium?.copyWith(
+                            fontWeight: FontWeight.bold,
+                            color: scheme.onSurfaceVariant,
+                          ),
                         ),
                       ),
+                      const SizedBox(width: Espace.sm),
                       Text(
                         fmtGNF(totalHT),
                         style: theme.textTheme.titleLarge?.copyWith(

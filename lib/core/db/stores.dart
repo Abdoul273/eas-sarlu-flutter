@@ -64,6 +64,12 @@ class Stores {
 
   // --- Écriture ---
 
+  /// Exécute [action] dans une transaction : tout passe, ou rien. Une vente
+  /// écrit l'article, la vente et la facture ; un plantage entre les deux
+  /// laissait un stock décrémenté sans vente en face.
+  Future<T> transaction<T>(Future<T> Function() action) =>
+      _db.transaction(action);
+
   /// Insère ou met à jour un enregistrement métier.
   ///
   /// [kind] : 'article', 'vente', 'client', 'facture', 'depense',

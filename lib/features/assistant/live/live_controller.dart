@@ -10,6 +10,7 @@ import '../ai_actions.dart';
 import '../ai_config.dart';
 import '../ai_contexte.dart';
 import '../ai_outils.dart';
+import '../reconnaissance_vocale.dart';
 import 'live_audio.dart';
 import 'live_config.dart';
 import 'live_session.dart';
@@ -424,7 +425,10 @@ class LiveController extends StateNotifier<EtatLive> {
         _hautParleur.jouer(pcm);
 
       case LiveTranscriptionEntree(:final texte):
-        _entreeEnCours += texte;
+        // Correction uniquement des confusions métier sûres dans le sous-titre.
+        // L'audio original reste la source pour Gemini ; aucune valeur sensible
+        // n'est devinée et toute écriture exige toujours la fiche tactile.
+        _entreeEnCours += normaliserTranscriptionMetier(texte);
         _mettreAJourLigne('user', _entreeEnCours);
 
       case LiveTranscriptionSortie(:final texte):
@@ -663,6 +667,7 @@ Tu es en conversation ORALE avec le commerçant, au comptoir, en français.
 - Réponds court : une à trois phrases. Pas de liste, pas de tableau, pas de markdown, pas de symbole. Les montants se disent en toutes lettres, en francs guinéens (« deux millions trois cent mille francs »).
 - Les outils ci-dessus s'appellent par FONCTION (function calling), jamais en écrivant une balise <outil> ni un bloc ```action```. Ces formats textuels ne s'appliquent pas en vocal.
 - Pour écrire quelque chose dans le magasin, appelle proposer_action ; l'utilisateur confirme à l'écran. Annonce ce que tu proposes en une phrase, puis attends le résultat.
+- Avant toute proposition qui contient une quantité, un prix, une dimension ou un article, redis ces éléments à voix haute et demande à l'utilisateur de les vérifier sur la fiche. Un « oui » entendu au micro n'autorise jamais l'écriture.
 - Quand un outil tourne, dis simplement « je regarde » et reprends après.
 - Si tu n'as pas compris, demande de répéter en une phrase, sans t'excuser longuement.
 - Reste sur le magasin. Bruit de fond ou phrase qui ne t'est pas adressée : reste silencieux.''';

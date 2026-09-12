@@ -89,11 +89,16 @@ class ResultatRecherche {
   /// Le moteur réellement interrogé, pour l'afficher dans la trace.
   final MoteurRecherche moteur;
 
+  /// Instant exact du relevé. Une source publiée sans date reste incertaine,
+  /// mais l'utilisateur sait au moins quand l'assistant l'a vérifiée.
+  final DateTime? verifieLe;
+
   const ResultatRecherche(
     this.resume,
     this.sources, {
     this.depuisCache = false,
     this.moteur = MoteurRecherche.google,
+    this.verifieLe,
   });
 }
 
@@ -155,6 +160,23 @@ final _refusPays = RegExp(
     r'unsupported .*(country|location|domain)|not supported',
     caseSensitive: false);
 
+final _contexteGuinee = RegExp(
+  r'\b(guin[ée]e|conakry|gnf|francs? guin[ée]ens?)\b',
+  caseSensitive: false,
+);
+
+/// Une recherche locale donne des résultats beaucoup plus exploitables que
+/// « prix ciment », qui ramène sinon des tarifs européens. On n'altère pas une
+/// requête qui cite déjà son marché ou une autre devise : le modèle conserve
+/// ainsi la possibilité de comparer une importation à Conakry.
+String requeteMarcheGuineen(String question) {
+  if (_contexteGuinee.hasMatch(question) ||
+      !(_motsPrix.hasMatch(question) || _motsActu.hasMatch(question))) {
+    return question;
+  }
+  return '$question Conakry Guinée prix en GNF';
+}
+
 class RechercheWeb {
   final Dio _dio;
 
@@ -192,7 +214,8 @@ class RechercheWeb {
     String langue = _langueParDefaut,
     CancelToken? annulation,
   }) async {
-    final q = _normaliser(question);
+    final questionLocale = requeteMarcheGuineen(question);
+    final q = _normaliser(questionLocale);
     if (q.isEmpty) {
       throw ErreurRecherche('Recherche vide.', CodeErreurRecherche.api);
     }
@@ -220,6 +243,7 @@ class RechercheWeb {
         enCache.valeur.sources,
         depuisCache: true,
         moteur: choisi,
+        verifieLe: enCache.a,
       );
     }
 
@@ -232,15 +256,16 @@ class RechercheWeb {
     Map donnees;
     var moteurRendu = choisi;
     try {
-      donnees = await _appeler(question, cle, choisi, pays, langue, annulation);
+      donnees = await _appeler(
+          questionLocale, cle, choisi, pays, langue, annulation);
     } on ErreurRecherche catch (e) {
       // Refus de la combinaison moteur+pays : on le retient pour ne plus le
       // retenter, et on répond quand même par la recherche générale.
       if (_refusPays.hasMatch(e.message) && choisi != MoteurRecherche.google) {
         _combinaisonsRefusees.add('${choisi.id}|$pays');
         moteurRendu = MoteurRecherche.google;
-        donnees = await _appeler(
-            question, cle, MoteurRecherche.google, pays, langue, annulation);
+        donnees = await _appeler(questionLocale, cle,
+            MoteurRecherche.google, pays, langue, annulation);
       } else {
         rethrow;
       }
@@ -253,13 +278,19 @@ class RechercheWeb {
     // on bascule tout de suite sur la recherche générale.
     if (moteurRendu != MoteurRecherche.google && _vide(donnees, moteurRendu)) {
       if (!_quotaLocalDepasse) {
-        donnees = await _appeler(
-            question, cle, MoteurRecherche.google, pays, langue, annulation);
+        donnees = await _appeler(questionLocale, cle,
+            MoteurRecherche.google, pays, langue, annulation);
         moteurRendu = MoteurRecherche.google;
       }
     }
 
-    final valeur = extraireResultats(donnees, moteurRendu);
+    final brut = extraireResultats(donnees, moteurRendu);
+    final valeur = ResultatRecherche(
+      brut.resume,
+      brut.sources,
+      moteur: moteurRendu,
+      verifieLe: DateTime.now(),
+    );
     _cache[cleCache] = _EntreeCache(DateTime.now(), valeur);
     return valeur;
   }

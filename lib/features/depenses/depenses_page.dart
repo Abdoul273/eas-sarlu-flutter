@@ -757,20 +757,30 @@ class _DepenseDetailSheet extends ConsumerWidget {
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
-                              Text(
-                                'Réglé : ${fmtGNF(regle)}',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: metier.succes,
+                              Flexible(
+                                child: Text(
+                                  'Réglé : ${fmtGNF(regle)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: metier.succes,
+                                  ),
                                 ),
                               ),
-                              Text(
-                                'Reste : ${fmtGNF(reste)}',
-                                style: theme.textTheme.bodySmall?.copyWith(
-                                  fontWeight: FontWeight.bold,
-                                  color: reste > 0
-                                      ? scheme.error
-                                      : scheme.onSurfaceVariant,
+                              const SizedBox(width: Espace.sm),
+                              Flexible(
+                                child: Text(
+                                  'Reste : ${fmtGNF(reste)}',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  textAlign: TextAlign.end,
+                                  style: theme.textTheme.bodySmall?.copyWith(
+                                    fontWeight: FontWeight.bold,
+                                    color: reste > 0
+                                        ? scheme.error
+                                        : scheme.onSurfaceVariant,
+                                  ),
                                 ),
                               ),
                             ],
@@ -967,6 +977,18 @@ class _DepenseDetailSheet extends ConsumerWidget {
       return;
     }
     if (!context.mounted) return;
+    // Une dépense sur laquelle de l'argent est déjà sorti ne s'efface pas :
+    // le règlement disparaîtrait de la trésorerie sans que la caisse, elle,
+    // ne le retrouve.
+    final regle = montantRegle(depense);
+    if (regle > 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('${fmtGNF(regle)} ont déjà été réglés sur cette dépense : '
+            'elle ne peut plus être supprimée.'),
+        backgroundColor: Theme.of(context).colorScheme.error,
+      ));
+      return;
+    }
     final confirm = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(

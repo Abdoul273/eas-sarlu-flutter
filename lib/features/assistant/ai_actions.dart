@@ -801,7 +801,18 @@ class AppelAction {
   final Map<String, dynamic> params;
   final String libelle;
 
-  const AppelAction(this.type, this.params, this.libelle);
+  /// Une écriture ne peut être exécutée qu'après la fiche affichée à l'humain.
+  /// Cette marque est posée exclusivement par [ouvrirFicheActions]. Elle est
+  /// volontairement transportée avec l'intention afin que l'exécuteur puisse
+  /// refuser aussi un futur raccourci qui oublierait la confirmation.
+  final bool confirmationHumaine;
+
+  const AppelAction(
+    this.type,
+    this.params,
+    this.libelle, {
+    this.confirmationHumaine = false,
+  });
 }
 
 /// Extrait le bloc ```action``` d'une réponse, comme le fait l'application web.

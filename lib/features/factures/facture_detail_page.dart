@@ -311,18 +311,28 @@ class _FactureDetailBody extends ConsumerWidget {
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        'Encaissé : ${fmtGNF(paye)}',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: metier.succes,
-                          fontWeight: FontWeight.bold,
+                      Flexible(
+                        child: Text(
+                          'Encaissé : ${fmtGNF(paye)}',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: metier.succes,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
-                      Text(
-                        reste > 0 ? 'Reste dû : ${fmtGNF(reste)}' : 'Intégralement payé',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: reste > 0 ? metier.danger : metier.succes,
-                          fontWeight: FontWeight.bold,
+                      const SizedBox(width: Espace.sm),
+                      Flexible(
+                        child: Text(
+                          reste > 0 ? 'Reste dû : ${fmtGNF(reste)}' : 'Payée',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.end,
+                          style: theme.textTheme.bodySmall?.copyWith(
+                            color: reste > 0 ? metier.danger : metier.succes,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                       ),
                     ],
