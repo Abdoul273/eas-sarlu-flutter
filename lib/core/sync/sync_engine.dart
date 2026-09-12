@@ -424,6 +424,16 @@ class SyncEngine {
         return true;
 
       case 'conflit':
+        // Un conflit SANS version serveur, c'est un refus définitif expliqué :
+        // « Cornière 30 : plus rien en stock. » Il n'y a rien à arbitrer entre
+        // deux versions, seulement une vente à ne pas faire. On le traite
+        // comme un refus : l'opération sort de la file, l'instantané serveur
+        // efface son effet local, et le motif est dit.
+        if (resultat['current'] == null && resultat['erreur'] != null) {
+          await _opQueue.markApplied(id);
+          _refusRecus.add(resultat['erreur'].toString());
+          return false;
+        }
         // L'opération SORT de la file. La rejouer referait échouer la
         // synchronisation à chaque retour de réseau sans jamais rien résoudre,
         // et bloquerait derrière elle toutes les ventes suivantes. Elle est
