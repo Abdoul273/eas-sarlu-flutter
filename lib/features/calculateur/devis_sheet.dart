@@ -5,8 +5,15 @@ import '../../app/format.dart';
 import '../../app/theme.dart';
 import '../../app/ui_kit.dart';
 import '../../core/models/models.dart';
+import 'package:uuid/uuid.dart';
+
+import '../dashboard/dashboard_page.dart' show utilisateurActuelProvider;
+import '../../core/db/stores.dart';
+import '../../core/sync/op_queue.dart';
 import '../ventes/ventes_page.dart'; // tousClientsProvider, entrepriseProvider
 import 'devis_pdf.dart';
+
+const _uuid = Uuid();
 
 // ─── Le calcul devient un papier ──────────────────────────────────────────────
 // Ce qu'il manquait au calculateur : de quoi transformer un chiffrage en
@@ -69,10 +76,31 @@ class _FeuilleDevisState extends ConsumerState<FeuilleDevis> {
         note: _noteCtrl.text,
       );
 
+  /// Le document est enregistré au premier geste — imprimer ou envoyer — et
+  /// une seule fois : le papier tendu au client doit se retrouver dans la
+  /// liste des proformas, avec son numéro, pour être transformé en vente le
+  /// jour où il revient.
+  bool _enregistree = false;
+
+  Future<void> _enregistrer(Devis devis) async {
+    if (_enregistree) return;
+    final proforma = devis.versProforma(
+      id: _uuid.v4(),
+      creePar: ref.read(utilisateurActuelProvider)?.nom ?? '',
+    );
+    final stores = ref.read(storesProvider);
+    await stores.upsert('devis', proforma);
+    await ref
+        .read(opQueueProvider)
+        .enqueue('devis', {'record': proforma.toJson()});
+    _enregistree = true;
+  }
+
   Future<void> _agir(Future<void> Function(Devis, Entreprise?) action) async {
     if (_travaille) return;
     setState(() => _travaille = true);
     try {
+      await _enregistrer(_devis);
       // La fiche est ATTENDUE, et non lue au vol.
       //
       // `entrepriseProvider` est un flux : le lire sans l'attendre rendait

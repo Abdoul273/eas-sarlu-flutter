@@ -76,7 +76,9 @@ bool routeAutorisee(String chemin, bool Function(String) aLeDroit) {
   // un formulaire dont la sauvegarde échouera n'est une faveur pour personne.
   if (sur('/stock/article/nouveau')) return aLeDroit('stock');
 
-  if (sur('/ventes') || sur('/bons')) return aLeDroit('vendre');
+  if (sur('/ventes') || sur('/bons') || sur('/proformas')) {
+    return aLeDroit('vendre');
+  }
   if (sur('/depenses')) return aLeDroit('depenses');
   // Une facture se consulte aussi bien pour encaisser que pour suivre les
   // créances : l'un ou l'autre droit suffit.

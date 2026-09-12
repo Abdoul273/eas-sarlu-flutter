@@ -97,6 +97,14 @@ const List<GroupePanneau> kGroupesPanneau = [
     titre: 'Opérations',
     entrees: [
       EntreePanneau(
+        icone: Icons.request_quote_outlined,
+        libelle: 'Proformas',
+        droit: 'vendre',
+        routeName: 'proformas',
+        routePath: '/proformas',
+        description: 'Devis remis, à transformer en vente',
+      ),
+      EntreePanneau(
         icone: Icons.local_shipping_outlined,
         libelle: 'Bons de livraison',
         routeName: 'bons',

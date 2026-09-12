@@ -29,12 +29,17 @@ import '../factures/facture_pdf.dart';
 /// date de fin engage le magasin indéfiniment.
 const int kValiditeDevisJours = 7;
 
-/// Numéro local de la proforma — `PRO-2026-0802-1432`.
+/// Numéro de la proforma — `PRO-2026-0802-1432`.
 ///
 /// L'année, le jour puis l'heure : deux devis du même comptoir ne peuvent se
 /// confondre, et le numéro se classe tout seul dans l'ordre chronologique. Il
-/// n'est PAS tiré de la série du serveur : celle-ci numérote des ventes réelles,
-/// et un chiffrage sans suite y laisserait un trou inexplicable.
+/// n'est PAS tiré de la série des ventes : un chiffrage sans suite y laisserait
+/// un trou inexplicable.
+///
+/// Il est attribué ICI, sur le téléphone, et le serveur le conserve tel quel :
+/// le papier remis au client et l'enregistrement portent le même numéro, même
+/// quand la proforma part hors ligne. Le serveur n'en attribue un que si
+/// celui-ci manque.
 ///
 /// Le code « PRO » est celui du document imprimé — une facture proforma. Le
 /// bandeau annonçant « Fac Pro N° », le code lui-même n'est pas réimprimé.
@@ -71,6 +76,33 @@ class Devis {
     this.validiteJours = kValiditeDevisJours,
     this.note = '',
   });
+
+  /// Reconstruit le document depuis une proforma enregistrée, pour la
+  /// réimprimer ou la renvoyer depuis la liste.
+  factory Devis.depuisProforma(Proforma p, {Client? client}) => Devis(
+        numero: p.numero,
+        date: p.dateValeur ?? DateTime.now(),
+        lignes: p.lignes,
+        client: client,
+        nomLibre: client == null ? p.clientNom : '',
+        validiteJours: p.validiteJours,
+        note: p.note,
+      );
+
+  /// L'enregistrement qui en garde la trace.
+  Proforma versProforma({required String id, required String creePar}) =>
+      Proforma(
+        id: id,
+        numero: numero,
+        clientId: client?.id ?? '',
+        clientNom: client?.nom ?? nomLibre.trim(),
+        date: date.toIso8601String(),
+        validiteJours: validiteJours,
+        lignes: lignes,
+        totalNet: total,
+        note: note.trim(),
+        creePar: creePar,
+      );
 
   int get total => lignes.fold<int>(0, (s, l) => s + l.total);
   int get totalUnites => lignes.fold<int>(0, (s, l) => s + l.qte);

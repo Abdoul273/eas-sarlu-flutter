@@ -21,6 +21,7 @@ import '../features/factures/facture_detail_page.dart';
 import '../features/factures/factures_page.dart';
 import '../features/finances/finances_page.dart';
 import '../features/parametres/parametres_page.dart';
+import '../features/proformas/proformas_page.dart';
 import '../features/rapports/rapports_page.dart';
 import '../features/stock/article_detail_page.dart';
 import '../features/stock/article_form_page.dart';
@@ -197,6 +198,7 @@ final routerProvider = Provider<GoRouter>((ref) {
             articleId: articleId,
             quantite: quantite,
             articlesPreremplis: articlesPreremplis,
+            proformaId: state.uri.queryParameters['proformaId'],
           );
         },
       ),
@@ -240,6 +242,11 @@ final routerProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => FournisseurDetailPage(
           id: state.pathParameters['id']!,
         ),
+      ),
+      GoRoute(
+        path: '/proformas',
+        name: 'proformas',
+        builder: (context, state) => const ProformasPage(),
       ),
       GoRoute(
         path: '/bons',

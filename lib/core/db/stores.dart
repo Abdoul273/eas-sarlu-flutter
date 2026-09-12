@@ -272,6 +272,21 @@ class Stores {
       _getAll('mouvement', MouvementStock.fromJson,
           compare: (a, b) => b.date.compareTo(a.date));
 
+  Future<Proforma?> getProforma(String id) =>
+      _getOne('devis', id, Proforma.fromJson);
+
+  /// Proformas, les plus récentes en premier. Type serveur : « devis ».
+  Future<List<Proforma>> getProformas() => _getAll('devis', Proforma.fromJson,
+      compare: (a, b) => b.date.compareTo(a.date));
+
+  Stream<List<Proforma>> watchProformas() {
+    return _selectKind('devis').watch().map((rows) => _mapRows(
+          rows,
+          Proforma.fromJson,
+          compare: (a, b) => b.date.compareTo(a.date),
+        ));
+  }
+
   /// Utilisateurs triés par nom.
   Future<List<Utilisateur>> getUtilisateurs() =>
       _getAll('user', Utilisateur.fromJson,

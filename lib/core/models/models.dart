@@ -822,6 +822,158 @@ class Fournisseur {
   }
 }
 
+// ─── Proforma ─────────────────────────────────────────────────────────────────
+// Le papier qu'on tend au client pour qu'il réfléchisse : chiffré, daté,
+// valable quelques jours, sans effet sur le stock ni la caisse. Le serveur le
+// range sous le type « devis » et lui attribue son numéro PRO-AAAA-NNNN.
+
+/// Ce qu'une proforma peut être.
+abstract final class StatutProforma {
+  static const envoyee = 'envoye';
+  static const acceptee = 'accepte';
+  static const refusee = 'refuse';
+  static const convertie = 'converti';
+
+  static String libelle(String s) => switch (s) {
+        envoyee => 'Envoyée',
+        acceptee => 'Acceptée',
+        refusee => 'Refusée',
+        convertie => 'Vendue',
+        'expire' => 'Expirée',
+        _ => 'Brouillon',
+      };
+}
+
+class Proforma {
+  final String id;
+
+  /// Vide tant que le serveur ne l'a pas attribué.
+  final String numero;
+  final String clientId;
+
+  /// Le nom tapé quand le client n'est pas dans le fichier.
+  final String clientNom;
+  final String date;
+  final int validiteJours;
+  final List<LigneVente> lignes;
+  final int totalNet;
+  final String note;
+  final String statut;
+
+  /// La vente qui en est sortie, une fois convertie.
+  final String venteId;
+  final String creePar;
+  final int? rev;
+  final String? updatedAt;
+  final String? updatedBy;
+
+  Proforma({
+    required this.id,
+    this.numero = '',
+    this.clientId = '',
+    this.clientNom = '',
+    required this.date,
+    this.validiteJours = 15,
+    this.lignes = const [],
+    this.totalNet = 0,
+    this.note = '',
+    this.statut = StatutProforma.envoyee,
+    this.venteId = '',
+    this.creePar = '',
+    this.rev,
+    this.updatedAt,
+    this.updatedBy,
+  });
+
+  DateTime? get dateValeur => DateTime.tryParse(date);
+  DateTime? get valableJusquA =>
+      dateValeur?.add(Duration(days: validiteJours));
+
+  /// Expirée : encore ouverte, mais la date de validité est passée.
+  bool get expiree =>
+      statut == StatutProforma.envoyee &&
+      (valableJusquA?.isBefore(DateTime.now()) ?? false);
+
+  /// Le statut tel qu'il se lit, expiration comprise.
+  String get statutEffectif => expiree ? 'expire' : statut;
+
+  /// Une proforma se transforme en vente tant qu'elle n'a pas été vendue ni
+  /// refusée — même expirée : le client qui revient en retard reste un client.
+  bool get convertible =>
+      statut == StatutProforma.envoyee || statut == StatutProforma.acceptee;
+
+  factory Proforma.fromJson(Map<String, dynamic> json) {
+    return Proforma(
+      id: json['id'] as String? ?? '',
+      numero: json['numero'] as String? ?? '',
+      clientId: json['clientId'] as String? ?? '',
+      clientNom: json['clientNom'] as String? ?? '',
+      date: json['date'] as String? ?? '',
+      validiteJours: _entier(json['validiteJours']) > 0
+          ? _entier(json['validiteJours'])
+          : 15,
+      lignes: (json['lignes'] as List<dynamic>? ?? const [])
+          .map((l) => LigneVente.fromJson(l as Map<String, dynamic>))
+          .toList(),
+      totalNet: _entier(json['totalNet']),
+      note: json['note'] as String? ?? '',
+      statut: json['statut'] as String? ?? StatutProforma.envoyee,
+      venteId: json['venteId'] as String? ?? '',
+      creePar: json['creePar'] as String? ?? '',
+      rev: json['_rev'] as int?,
+      updatedAt: json['_updatedAt'] as String?,
+      updatedBy: json['_updatedBy'] as String?,
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'numero': numero,
+        'clientId': clientId,
+        'clientNom': clientNom,
+        'date': date,
+        'validiteJours': validiteJours,
+        'lignes': lignes.map((l) => l.toJson()).toList(),
+        'totalNet': totalNet,
+        'note': note,
+        'statut': statut,
+        'venteId': venteId,
+        'creePar': creePar,
+        if (rev != null) '_rev': rev,
+        if (updatedAt != null) '_updatedAt': updatedAt,
+        if (updatedBy != null) '_updatedBy': updatedBy,
+      };
+
+  Proforma copyWith({
+    String? numero,
+    String? clientId,
+    String? clientNom,
+    List<LigneVente>? lignes,
+    int? totalNet,
+    String? note,
+    String? statut,
+    String? venteId,
+    int? rev,
+  }) =>
+      Proforma(
+        id: id,
+        numero: numero ?? this.numero,
+        clientId: clientId ?? this.clientId,
+        clientNom: clientNom ?? this.clientNom,
+        date: date,
+        validiteJours: validiteJours,
+        lignes: lignes ?? this.lignes,
+        totalNet: totalNet ?? this.totalNet,
+        note: note ?? this.note,
+        statut: statut ?? this.statut,
+        venteId: venteId ?? this.venteId,
+        creePar: creePar,
+        rev: rev ?? this.rev,
+        updatedAt: updatedAt,
+        updatedBy: updatedBy,
+      );
+}
+
 class Reglement {
   final String id;
   final String date;

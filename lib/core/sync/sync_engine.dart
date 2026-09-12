@@ -512,6 +512,8 @@ class SyncEngine {
         'article' => 'Article',
         'fournisseur' => 'Fournisseur',
         'fournisseur_delete' => 'Suppression de fournisseur',
+        'devis' => 'Proforma',
+        'devis_delete' => 'Suppression de proforma',
         'mouvement' => 'Mouvement de stock',
         'facture_paiement' => 'Versement sur facture',
         'depense' => 'Dépense',
@@ -570,7 +572,14 @@ class SyncEngine {
           await _stores.upsert('fournisseur', Fournisseur.fromJson(record));
         }
 
+      case 'devis':
+        final record = r['record'];
+        if (record != null) {
+          await _stores.upsert('devis', Proforma.fromJson(record));
+        }
+
       case 'fournisseur_delete':
+      case 'devis_delete':
         // Rien à réintégrer : la suppression locale a déjà eu lieu.
         break;
 
@@ -643,6 +652,8 @@ class SyncEngine {
       // saisis sur le téléphone à chaque synchronisation.
       if (donnees['fournisseurs'] != null)
         'fournisseur': _parser(donnees['fournisseurs'], Fournisseur.fromJson),
+      if (donnees['devis'] != null)
+        'devis': _parser(donnees['devis'], Proforma.fromJson),
       // Le serveur nomme cette clé « utilisateurs » (et non « users »).
       if (donnees['utilisateurs'] != null)
         'user': _parser(donnees['utilisateurs'], Utilisateur.fromJson),
@@ -826,6 +837,22 @@ class SyncEngine {
 
       case 'fournisseur_delete':
         await _stores.supprimer('fournisseur', payload['id'] as String);
+
+      case 'devis':
+        final record = Proforma.fromJson(payload['record']);
+        final serveur = await _stores.getProforma(record.id);
+        // Le numéro appartient au serveur : s'il l'a déjà attribué, on le
+        // garde plutôt que de le remplacer par le vide de la saisie locale.
+        await _stores.upsert(
+          'devis',
+          record.copyWith(
+            rev: serveur?.rev,
+            numero: record.numero.isEmpty ? serveur?.numero : null,
+          ),
+        );
+
+      case 'devis_delete':
+        await _stores.supprimer('devis', payload['id'] as String);
 
       case 'mouvement':
         final mouvement = MouvementStock.fromJson(payload['mouvement']);

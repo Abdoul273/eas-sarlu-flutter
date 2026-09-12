@@ -36,12 +36,17 @@ class NouvelleVentePage extends ConsumerStatefulWidget {
   final int? quantite;
   final List<Map<String, dynamic>>? articlesPreremplis;
 
+  /// La proforma dont cette vente est la suite : marquée « vendue » à
+  /// l'encaissement, avec l'identifiant de la vente.
+  final String? proformaId;
+
   const NouvelleVentePage({
     super.key,
     this.clientId,
     this.articleId,
     this.quantite,
     this.articlesPreremplis,
+    this.proformaId,
   });
 
   @override
@@ -336,6 +341,22 @@ class _NouvelleVentePageState extends ConsumerState<NouvelleVentePage> {
       'facture': facture.toJson(),
       'lignesStock': lignesStock,
     });
+
+    // La proforma d'origine devient « vendue » : elle ne sera plus proposée
+    // à la conversion, et garde le lien vers la vente.
+    final pid = widget.proformaId;
+    if (pid != null) {
+      final p = await stores.getProforma(pid);
+      if (p != null) {
+        final maj =
+            p.copyWith(statut: StatutProforma.convertie, venteId: venteId);
+        await stores.upsert('devis', maj);
+        await opQueue.enqueue('devis', {
+          'record': maj.toJson(),
+          if (p.rev != null) 'baseRev': p.rev,
+        });
+      }
+    }
 
     HapticFeedback.mediumImpact();
     _showConfirmation(factureId);
